@@ -1,0 +1,9 @@
+{"service":"payments","level":"ERROR","error_type":"timeout","message":"downstream request timed out"}
+{"service":"payments","level":"ERROR","error_type":"timeout","message":"downstream request timed out"}
+{"service":"gateway","level":"ERROR","error_type":"upstream_502","message":"bad gateway from backend"}
+{"service":"worker","level":"WARN","error_type":"lag","message":"consumer lag increasing"}
+{"service":"payments","level":"ERROR","error_type":"db_conn","message":"connection pool exhausted"}
+{"service":"gateway","level":"ERROR","error_type":"upstream_502","message":"bad gateway from backend"}
+{"service":"inventory","level":"ERROR","error_type":"dns_failure","message":"resolver timeout"}
+not-json
+{"service":"payments","level":"ERROR","error_type":"db_conn","message":"connection pool exhausted"}

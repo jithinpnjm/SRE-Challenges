@@ -4,11 +4,14 @@ Use this track after the basics feel comfortable. The goal here is to reason wel
 
 Recommended order:
 
-1. [01-linux-networking.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/01-linux-networking.md)
-2. [02-kubernetes.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/02-kubernetes.md)
-3. [03-observability-incident-response.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/03-observability-incident-response.md)
-4. [04-cicd-release-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/04-cicd-release-security.md)
-5. [05-system-design-cloud.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/05-system-design-cloud.md)
+1. [00-how-to-think.md](00-how-to-think.md)
+2. [01-linux-networking.md](01-linux-networking.md)
+3. [02-kubernetes.md](02-kubernetes.md)
+4. [03-observability-incident-response.md](03-observability-incident-response.md)
+5. [04-cicd-release-security.md](04-cicd-release-security.md)
+6. [05-system-design-cloud.md](05-system-design-cloud.md)
+7. [06-platform-components.md](06-platform-components.md)
+8. [07-scripting-automation.md](07-scripting-automation.md)
 
 Focus:
 

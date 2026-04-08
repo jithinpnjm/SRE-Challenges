@@ -8,7 +8,9 @@ Goal: become crisp on Linux, networking, Kubernetes basics, and observability bu
 
 ### Day 1
 
-- read [beginner/01-linux-networking.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/beginner/01-linux-networking.md)
+- read [foundations/01-networking-fundamentals.md](foundations/01-networking-fundamentals.md)
+- read [beginner/00-how-to-think.md](beginner/00-how-to-think.md)
+- read [beginner/01-linux-networking.md](beginner/01-linux-networking.md)
 - answer Challenges 1 to 3 aloud
 - write one page on TCP handshake, retransmits, and what `TIME_WAIT` means operationally
 
@@ -20,31 +22,36 @@ Goal: become crisp on Linux, networking, Kubernetes basics, and observability bu
 
 ### Day 3
 
-- read [beginner/02-kubernetes.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/beginner/02-kubernetes.md)
+- read [foundations/02-linux-kubernetes-foundations.md](foundations/02-linux-kubernetes-foundations.md)
+- read [beginner/02-kubernetes.md](beginner/02-kubernetes.md)
 - answer all fundamentals and troubleshooting prompts
 - explain Pod, Deployment, Service, Ingress, and probe interactions without notes
 
 ### Day 4
 
-- read [beginner/03-observability-incident-response.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/beginner/03-observability-incident-response.md)
+- read [beginner/03-observability-incident-response.md](beginner/03-observability-incident-response.md)
 - write sample alert improvements for two noisy alerts you have seen before
 - practice distinguishing logs, metrics, traces, and profiles
 
 ### Day 5
 
-- read [beginner/04-cicd-release-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/beginner/04-cicd-release-security.md)
+- read [foundations/03-bash-and-shell-scripting.md](foundations/03-bash-and-shell-scripting.md)
+- read [foundations/04-python-for-sre.md](foundations/04-python-for-sre.md)
+- read [beginner/04-cicd-release-security.md](beginner/04-cicd-release-security.md)
+- read [beginner/07-scripting-automation.md](beginner/07-scripting-automation.md)
 - summarize a secure CI/CD pipeline from commit to production
 - map image signing and provenance to one service you know
 
 ### Day 6
 
-- read [beginner/05-system-design-cloud.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/beginner/05-system-design-cloud.md)
+- read [beginner/05-system-design-cloud.md](beginner/05-system-design-cloud.md)
+- read [beginner/06-platform-components.md](beginner/06-platform-components.md)
 - answer the GCP and AWS crossover prompts
 - sketch one HA design and one low-latency design
 
 ### Day 7
 
-- run [mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
+- run [mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md](mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
 - keep the interview to 45 minutes
 - review weak spots and note the exact concepts to revisit in Week 2
 
@@ -54,7 +61,7 @@ Goal: become strong at production debugging, alert triage, and incident reasonin
 
 ### Day 8
 
-- read [intermediate/01-linux-networking.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/01-linux-networking.md)
+- read [intermediate/01-linux-networking.md](intermediate/01-linux-networking.md)
 - work the packet loss, conntrack, and CPU steal scenarios
 
 ### Day 9
@@ -65,27 +72,27 @@ Goal: become strong at production debugging, alert triage, and incident reasonin
 
 ### Day 10
 
-- read [intermediate/02-kubernetes.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/02-kubernetes.md)
+- read [intermediate/02-kubernetes.md](intermediate/02-kubernetes.md)
 - focus on kube-scheduler, kubelet, evictions, and service networking
 
 ### Day 11
 
-- read [intermediate/03-observability-incident-response.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/03-observability-incident-response.md)
+- read [intermediate/03-observability-incident-response.md](intermediate/03-observability-incident-response.md)
 - design one SLO set and a paging strategy for a customer-facing API
 
 ### Day 12
 
-- read [intermediate/04-cicd-release-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/04-cicd-release-security.md)
+- read [intermediate/04-cicd-release-security.md](intermediate/04-cicd-release-security.md)
 - rehearse rollback, progressive delivery, and supply-chain risk answers
 
 ### Day 13
 
-- read [intermediate/05-system-design-cloud.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/intermediate/05-system-design-cloud.md)
+- read [intermediate/05-system-design-cloud.md](intermediate/05-system-design-cloud.md)
 - compare regional HA patterns in GCP and AWS
 
 ### Day 14
 
-- run [mock-interviews/02-distributed-systems-and-resilience.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/02-distributed-systems-and-resilience.md)
+- run [mock-interviews/02-distributed-systems-and-resilience.md](mock-interviews/02-distributed-systems-and-resilience.md)
 - keep answers concise and structured
 - score yourself on clarity, tradeoffs, and failure analysis
 
@@ -95,27 +102,27 @@ Goal: think like an owner of high-scale, high-availability, low-latency producti
 
 ### Day 15
 
-- read [expert/01-linux-networking.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/expert/01-linux-networking.md)
+- read [expert/01-linux-networking.md](expert/01-linux-networking.md)
 - work the tail-latency, kernel tuning, and noisy-neighbor scenarios
 
 ### Day 16
 
-- read [expert/02-kubernetes.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/expert/02-kubernetes.md)
+- read [expert/02-kubernetes.md](expert/02-kubernetes.md)
 - answer control plane degradation and multi-cluster resilience prompts
 
 ### Day 17
 
-- read [expert/03-observability-incident-response.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/expert/03-observability-incident-response.md)
+- read [expert/03-observability-incident-response.md](expert/03-observability-incident-response.md)
 - practice translating SLO burn into executive and engineer language
 
 ### Day 18
 
-- read [expert/04-cicd-release-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/expert/04-cicd-release-security.md)
+- read [expert/04-cicd-release-security.md](expert/04-cicd-release-security.md)
 - prepare answers on break-glass, provenance, policy enforcement, and release governance
 
 ### Day 19
 
-- read [expert/05-system-design-cloud.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/expert/05-system-design-cloud.md)
+- read [expert/05-system-design-cloud.md](expert/05-system-design-cloud.md)
 - focus on low latency, cross-region design, data consistency, and cloud failure domains
 
 ### Day 20
@@ -127,7 +134,7 @@ Goal: think like an owner of high-scale, high-availability, low-latency producti
 
 ### Day 21
 
-- run [mock-interviews/03-platform-cloud-and-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/03-platform-cloud-and-security.md)
+- run [mock-interviews/03-platform-cloud-and-security.md](mock-interviews/03-platform-cloud-and-security.md)
 - follow up with a written architecture summary in under one page
 
 ## Week 4: Interview Simulation And Targeted Repair
@@ -156,7 +163,7 @@ Goal: convert knowledge into confident, interviewer-friendly performance.
 
 ### Day 26
 
-- review [sources-and-references.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/sources-and-references.md) for weak domains only
+- review [sources-and-references.md](sources-and-references.md) for weak domains only
 - do not try to reread everything
 
 ### Day 27

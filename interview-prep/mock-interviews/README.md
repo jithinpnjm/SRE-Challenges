@@ -4,9 +4,9 @@ Use these after you have worked through at least the beginner and intermediate t
 
 Recommended order:
 
-1. [01-nebius-linux-kubernetes-troubleshooting.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
-2. [02-distributed-systems-and-resilience.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/02-distributed-systems-and-resilience.md)
-3. [03-platform-cloud-and-security.md](/Users/jithinpjoseph/Documents/GitHub/SRE-Challenges/interview-prep/mock-interviews/03-platform-cloud-and-security.md)
+1. [01-nebius-linux-kubernetes-troubleshooting.md](01-nebius-linux-kubernetes-troubleshooting.md)
+2. [02-distributed-systems-and-resilience.md](02-distributed-systems-and-resilience.md)
+3. [03-platform-cloud-and-security.md](03-platform-cloud-and-security.md)
 
 Practice mode:
 

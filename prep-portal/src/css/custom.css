@@ -1,0 +1,81 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #0d6e5f;
+  --ifm-color-primary-dark: #0b6356;
+  --ifm-color-primary-darker: #0a5d51;
+  --ifm-color-primary-darkest: #084d43;
+  --ifm-color-primary-light: #0f7968;
+  --ifm-color-primary-lighter: #107f6d;
+  --ifm-color-primary-lightest: #159784;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-background-color: #f7f5ef;
+  --ifm-navbar-background-color: rgba(247, 245, 239, 0.92);
+  --ifm-footer-background-color: #11211d;
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #5fd0bc;
+  --ifm-color-primary-dark: #48c9b2;
+  --ifm-color-primary-darker: #3dc6ae;
+  --ifm-color-primary-darkest: #30a58f;
+  --ifm-color-primary-light: #76d7c6;
+  --ifm-color-primary-lighter: #82dbc9;
+  --ifm-color-primary-lightest: #a5e6d8;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-background-color: #0e1513;
+  --ifm-navbar-background-color: rgba(14, 21, 19, 0.92);
+}
+
+.navbar {
+  backdrop-filter: blur(10px);
+}
+
+.portal-card {
+  height: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme='dark'] .portal-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+}
+
+.portal-banner {
+  padding: 1.5rem;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(13, 110, 95, 0.18), transparent 40%),
+    linear-gradient(135deg, rgba(17, 33, 29, 0.96), rgba(13, 110, 95, 0.88));
+  color: #f7f5ef;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.16);
+}
+
+.portal-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.portal-banner a {
+  color: inherit;
+}
+
+textarea {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme='dark'] textarea {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
