@@ -1,74 +1,93 @@
 # Hands-On Labs
 
-This area turns the interview prep pack into practice you can actually run.
+This area converts the interview prep foundation guides into practice. Reading about systems is not the same as reasoning through them under pressure. These labs are structured so you can work through them alone or use them as a simulation with a reviewer.
+
+## What These Labs Cover
+
+The labs span the core domains a senior SRE or platform engineer interview will test:
+
+- Linux host behavior, process inspection, filesystem and memory troubleshooting
+- Network traffic paths, DNS, TLS timing, routing, and packet capture
+- Kubernetes object behavior, scheduling, service networking, and GPU platform design
+- Bash scripting for automation, health checks, and guardrails
+- Python scripting for probes, log analysis, and Kubernetes event processing
+- Cloud architecture design for GCP and AWS platforms
+- Cloud VPC and networking design decisions
+
+Most labs are paper-plus-command exercises. The cloud design and Kubernetes architecture labs are written design reviews — you produce a written answer and have it reviewed.
 
 ## Lab Tracks
 
-- [linux/README.md](linux/README.md)
-- [networking/README.md](networking/README.md)
-- [kubernetes/README.md](kubernetes/README.md)
-- [bash/README.md](bash/README.md)
-- [python/README.md](python/README.md)
-- [cloud-design/README.md](cloud-design/README.md)
+| Track | Focus | Labs |
+|---|---|---|
+| [linux/](linux/README.md) | Host triage, filesystem, processes, cgroups | 3 labs |
+| [linux-admin/](linux-admin/README.md) | systemd, storage admin, command mastery drills | 4 drills |
+| [networking/](networking/README.md) | DNS, HTTP, SSH, routing, packet capture | 3 labs |
+| [bash/](bash/README.md) | Health check scripts, log parsing, retry logic | 3 labs |
+| [python/](python/README.md) | HTTP probes, JSON log analysis, K8s event processing | 3 labs |
+| [kubernetes/](kubernetes/README.md) | Pod/service debug, rollouts, scheduling, GPU/AI design | 5 labs |
+| [cloud-design/](cloud-design/README.md) | GCP and AWS architecture reviews | 4 labs |
+| [cloud-networking/](cloud-networking/README.md) | VPC design, load balancing, routing drills | 4 drills |
 
-## How To Work These Labs
+## Prerequisites
 
-For each lab:
+Before starting any lab, you need a working local environment. Minimum setup:
 
-1. Read the scenario and do not jump to commands immediately.
-2. Write down the expected flow first.
-3. Run only the minimum commands needed to confirm or reject your theory.
-4. Capture your findings in a short note.
-5. Ask me for hints if you want to stay unsolved.
+- macOS or Linux shell
+- Python 3 with `pip` or `uv`
+- Docker: https://docs.docker.com/get-docker/
+- `kubectl`: https://kubernetes.io/docs/tasks/tools/install-kubectl-macos/
+- A local Kubernetes cluster (`kind` or `minikube`):
+  - kind: https://kind.sigs.k8s.io/docs/user/quick-start/
+  - minikube: https://minikube.sigs.k8s.io/docs/commands/start/
 
-## Suggested Order
+For cloud design labs you do not need a running cloud account, but access to a free-tier GCP or AWS account helps you verify networking behavior.
 
-1. Linux Lab 1
-2. Networking Lab 1
-3. Bash Lab 1
-4. Python Lab 1
-5. Kubernetes Lab 1
-6. Then continue by topic depth
-7. Then start the Cloud Design labs and use me as reviewer
+## Suggested Progression
 
-## Optional Local Tooling
+**Week 1 — fundamentals**
+1. Linux Lab 1: host triage
+2. Networking Lab 1: HTTP and DNS flow
+3. Bash Lab 1: health check script
+4. Linux Lab 2: filesystem and I/O
 
-These labs are designed to be useful even as paper exercises, but they become much stronger if you can run some of them locally with:
+**Week 2 — depth**
+5. Networking Lab 2: SSH latency
+6. Python Lab 1: HTTP probe
+7. Kubernetes Lab 1: pod and service debug
+8. Linux Lab 3: processes, cgroups, namespaces
 
-- Docker
-- `kubectl`
-- a local Kubernetes cluster such as `kind` or `minikube`
-- standard Linux tools such as `ss`, `ip`, `curl`, `dig`, `tcpdump`, `journalctl`
+**Week 3 — platform reasoning**
+9. Kubernetes Lab 2: rollouts and probes
+10. Kubernetes Lab 3: node pressure and scheduling
+11. Python Lab 2 and 3: log analysis, K8s events
+12. Linux Admin drills 1-4
 
-## Where To Simulate And Run Things
+**Week 4 — architecture**
+13. Cloud Design Lab 1: GCP public platform
+14. Cloud Design Lab 2: private internal platform
+15. Kubernetes Lab 4: GPU and AI platform design
+16. Kubernetes Lab 5: operators, mesh, and DR
+17. Cloud Networking drills 1-4
 
-Official setup and practice links:
+## How To Work A Lab
 
-- Kubernetes tools: https://kubernetes.io/docs/tasks/tools/
-- `kubectl` install: https://kubernetes.io/docs/tasks/tools/install-kubectl-macos/
-- `kind` quick start: https://kind.sigs.k8s.io/docs/user/quick-start/
-- `minikube` start: https://minikube.sigs.k8s.io/docs/commands/start/
-- `minikube` handbook: https://minikube.sigs.k8s.io/docs/handbook/
-- Docker install: https://docs.docker.com/get-docker/
-- Docker Desktop for Mac: https://docs.docker.com/desktop/setup/install/mac-install/
+1. Read the scenario. Do not start writing commands or design immediately.
+2. Write down what you expect to happen before you do anything.
+3. Run the minimum to confirm or disprove your theory.
+4. Note what surprised you and why.
+5. Check your answer against the rubric or reference answer if one exists.
 
-Cloud and managed-service simulation or hands-on docs:
+For design review labs, write your answer as a structured document, not a bullet list. An interviewer wants reasoning, not enumeration.
 
-- GCP networking diagnostics with Connectivity Tests: https://cloud.google.com/network-intelligence-center/docs/connectivity-tests/concepts/overview
-- GCP Connectivity Tests how-to: https://cloud.google.com/network-intelligence-center/docs/connectivity-tests/how-to/running-connectivity-tests
-- Google Cloud free trial: https://cloud.google.com/free
-- AWS getting started: https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/setting-up-route-53.html
+## If A Lab Feels Hard
 
-Mentor tip:
+Use the matching foundation guide first. The labs are calibrated to be genuinely difficult at the intermediate and advanced levels — that is intentional.
 
-- use local clusters for Kubernetes object behavior and node-level thinking
-- use cloud docs and trial accounts for managed-service behavior, IAM, networking, load balancing, and end-to-end architecture drills
-
-## Mentor Rule
-
-If a lab feels hard, that is expected. Use the matching foundation guide first:
-
-- [../foundations/01-networking-fundamentals.md](../foundations/01-networking-fundamentals.md)
-- [../foundations/02-linux-kubernetes-foundations.md](../foundations/02-linux-kubernetes-foundations.md)
-- [../foundations/03-bash-and-shell-scripting.md](../foundations/03-bash-and-shell-scripting.md)
-- [../foundations/04-python-for-sre.md](../foundations/04-python-for-sre.md)
+- Networking: [../foundations/01-networking-fundamentals.md](../foundations/01-networking-fundamentals.md)
+- Linux and Kubernetes: [../foundations/02-linux-kubernetes-foundations.md](../foundations/02-linux-kubernetes-foundations.md)
+- Bash: [../foundations/03-bash-and-shell-scripting.md](../foundations/03-bash-and-shell-scripting.md)
+- Python: [../foundations/04-python-for-sre.md](../foundations/04-python-for-sre.md)
+- GPU and operators: [../foundations/12-kubernetes-gpu-ai-platforms-and-operators.md](../foundations/12-kubernetes-gpu-ai-platforms-and-operators.md)
+- Observability: [../foundations/09-observability-slos-and-incident-response.md](../foundations/09-observability-slos-and-incident-response.md)
+- Cloud architecture: [../foundations/07-system-design-cloud-architecture.md](../foundations/07-system-design-cloud-architecture.md)

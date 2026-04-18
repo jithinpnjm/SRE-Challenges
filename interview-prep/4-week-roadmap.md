@@ -1,181 +1,197 @@
-# 4-Week Roadmap
+# 4-Week Study Roadmap
 
-This roadmap assumes about 60 to 120 minutes per day. If you have more time, add mock interview repetitions rather than trying to read everything at once.
+This roadmap assumes 60 to 90 minutes per day. If you have more time, add practice scenario repetitions rather than trying to read everything at once.
 
-## Week 1: Core Foundations
+---
 
-Goal: become crisp on Linux, networking, Kubernetes basics, and observability building blocks.
+## Week 1: Linux, Networking, and Kubernetes Fundamentals
 
-### Day 1
+Goal: become confident with host triage, packet flow, and Kubernetes core behavior.
 
-- read [foundations/01-networking-fundamentals.md](foundations/01-networking-fundamentals.md)
-- read [beginner/00-how-to-think.md](beginner/00-how-to-think.md)
-- read [beginner/01-linux-networking.md](beginner/01-linux-networking.md)
-- answer Challenges 1 to 3 aloud
-- write one page on TCP handshake, retransmits, and what `TIME_WAIT` means operationally
+### Day 1 — Linux and networking base
 
-### Day 2
+- Read [foundations/10-linux-and-network-administration.md](foundations/10-linux-and-network-administration.md)
+- Read [foundations/01-networking-fundamentals.md](foundations/01-networking-fundamentals.md)
+- Practice: describe TCP handshake, what TIME_WAIT means operationally, and how NAT changes packet flow
 
-- finish beginner Linux and networking challenges
-- practice explaining DNS resolution path, NAT, and packet filtering
-- review one production incident you have seen and map it to OSI layers
+### Day 2 — Linux debugging
 
-### Day 3
+- Read [foundations/05-linux-debug-playbook.md](foundations/05-linux-debug-playbook.md)
+- Work through [hands-on-labs/linux/lab-01-host-triage.md](hands-on-labs/linux/lab-01-host-triage.md)
+- Practice: walk a slow service scenario from uptime to strace without notes
 
-- read [foundations/02-linux-kubernetes-foundations.md](foundations/02-linux-kubernetes-foundations.md)
-- read [beginner/02-kubernetes.md](beginner/02-kubernetes.md)
-- answer all fundamentals and troubleshooting prompts
-- explain Pod, Deployment, Service, Ingress, and probe interactions without notes
+### Day 3 — Linux to Kubernetes
 
-### Day 4
+- Read [foundations/02-linux-kubernetes-foundations.md](foundations/02-linux-kubernetes-foundations.md)
+- Work through [hands-on-labs/linux/lab-03-processes-cgroups-namespaces.md](hands-on-labs/linux/lab-03-processes-cgroups-namespaces.md)
+- Practice: explain how Linux namespaces and cgroups map to a running pod
 
-- read [beginner/03-observability-incident-response.md](beginner/03-observability-incident-response.md)
-- write sample alert improvements for two noisy alerts you have seen before
-- practice distinguishing logs, metrics, traces, and profiles
+### Day 4 — Kubernetes networking
 
-### Day 5
+- Read [foundations/06-kubernetes-networking-deep-dive.md](foundations/06-kubernetes-networking-deep-dive.md)
+- Read [foundations/11-cloud-networking-and-kubernetes-networking.md](foundations/11-cloud-networking-and-kubernetes-networking.md)
+- Work through [hands-on-labs/cloud-networking/drill-04-kubernetes-cloud-networking-path.md](hands-on-labs/cloud-networking/drill-04-kubernetes-cloud-networking-path.md)
+- Practice: trace a packet from an external client to a pod, naming each hop
 
-- read [foundations/03-bash-and-shell-scripting.md](foundations/03-bash-and-shell-scripting.md)
-- read [foundations/04-python-for-sre.md](foundations/04-python-for-sre.md)
-- read [beginner/04-cicd-release-security.md](beginner/04-cicd-release-security.md)
-- read [beginner/07-scripting-automation.md](beginner/07-scripting-automation.md)
-- summarize a secure CI/CD pipeline from commit to production
-- map image signing and provenance to one service you know
+### Day 5 — Containers and manifest design
 
-### Day 6
+- Read [foundations/13-docker-and-container-runtime.md](foundations/13-docker-and-container-runtime.md)
+- Read [foundations/25-yaml-and-kubernetes-manifest-design.md](foundations/25-yaml-and-kubernetes-manifest-design.md)
+- Work through [hands-on-labs/kubernetes/lab-01-pod-service-debug.md](hands-on-labs/kubernetes/lab-01-pod-service-debug.md)
+- Practice: write a production-quality Deployment manifest with probes, resource limits, and PDB from memory
 
-- read [beginner/05-system-design-cloud.md](beginner/05-system-design-cloud.md)
-- read [beginner/06-platform-components.md](beginner/06-platform-components.md)
-- answer the GCP and AWS crossover prompts
-- sketch one HA design and one low-latency design
+### Day 6 — Networking labs
 
-### Day 7
+- Work through [hands-on-labs/networking/lab-01-http-dns-flow.md](hands-on-labs/networking/lab-01-http-dns-flow.md)
+- Work through [hands-on-labs/linux-admin/drill-03-process-socket-and-network-admin.md](hands-on-labs/linux-admin/drill-03-process-socket-and-network-admin.md)
+- Practice: diagnose a "service not reachable" scenario by checking DNS, endpoints, and NetworkPolicy
 
-- run [mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md](mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
-- keep the interview to 45 minutes
-- review weak spots and note the exact concepts to revisit in Week 2
+### Day 7 — Practice scenario 1
 
-## Week 2: Troubleshooting And Incident Depth
+- Run [mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md](mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
+- Keep it to 45 minutes; answer without notes first
+- Write down the exact gaps — those are Week 2 targets
 
-Goal: become strong at production debugging, alert triage, and incident reasoning.
+---
 
-### Day 8
+## Week 2: Observability, Incident Response, and Debugging Depth
 
-- read [intermediate/01-linux-networking.md](intermediate/01-linux-networking.md)
-- work the packet loss, conntrack, and CPU steal scenarios
+Goal: become strong at production debugging, SLO design, and alert triage.
 
-### Day 9
+### Day 8 — Observability and SLOs
 
-- finish intermediate Linux and networking
-- drill command-first debugging plans for CPU, memory, disk, and network symptoms
-- explain when you would use `ss`, `ip`, `tcpdump`, `strace`, `journalctl`, and `perf`
+- Read [foundations/09-observability-slos-and-incident-response.md](foundations/09-observability-slos-and-incident-response.md)
+- Practice: design an SLO for a customer-facing API — define the SLI, threshold, error budget, and burn rate alerts
 
-### Day 10
+### Day 9 — Prometheus and Grafana
 
-- read [intermediate/02-kubernetes.md](intermediate/02-kubernetes.md)
-- focus on kube-scheduler, kubelet, evictions, and service networking
+- Read [foundations/19-prometheus-grafana-and-alertmanager.md](foundations/19-prometheus-grafana-and-alertmanager.md)
+- Practice: write PromQL for error rate, p99 latency, and a burn rate alert rule without reference
 
-### Day 11
+### Day 10 — Kubernetes rollouts and scheduling
 
-- read [intermediate/03-observability-incident-response.md](intermediate/03-observability-incident-response.md)
-- design one SLO set and a paging strategy for a customer-facing API
+- Work through [hands-on-labs/kubernetes/lab-02-rollout-and-probes.md](hands-on-labs/kubernetes/lab-02-rollout-and-probes.md)
+- Work through [hands-on-labs/kubernetes/lab-03-node-pressure-and-scheduling.md](hands-on-labs/kubernetes/lab-03-node-pressure-and-scheduling.md)
+- Practice: explain how kubelet handles OOMKilled, evictions, and probe failures during a bad rollout
 
-### Day 12
+### Day 11 — Structured troubleshooting
 
-- read [intermediate/04-cicd-release-security.md](intermediate/04-cicd-release-security.md)
-- rehearse rollback, progressive delivery, and supply-chain risk answers
+- Read [foundations/26-devops-troubleshooting-and-security-errors.md](foundations/26-devops-troubleshooting-and-security-errors.md)
+- Work through [hands-on-labs/linux-admin/drill-01-service-and-systemd-triage.md](hands-on-labs/linux-admin/drill-01-service-and-systemd-triage.md)
+- Practice: run the orient → hypothesis → test → interpret framework against a CrashLoopBackOff scenario
 
-### Day 13
+### Day 12 — CI/CD and delivery
 
-- read [intermediate/05-system-design-cloud.md](intermediate/05-system-design-cloud.md)
-- compare regional HA patterns in GCP and AWS
+- Read [foundations/08-cicd-trusted-delivery-and-platform-security.md](foundations/08-cicd-trusted-delivery-and-platform-security.md)
+- Read [foundations/17-delivery-systems-jenkins-github-actions-and-argocd.md](foundations/17-delivery-systems-jenkins-github-actions-and-argocd.md)
+- Practice: describe a secure path from code commit to production, including image signing and policy gates
 
-### Day 14
+### Day 13 — Linux admin depth
 
-- run [mock-interviews/02-distributed-systems-and-resilience.md](mock-interviews/02-distributed-systems-and-resilience.md)
-- keep answers concise and structured
-- score yourself on clarity, tradeoffs, and failure analysis
+- Work through [hands-on-labs/linux-admin/drill-02-filesystem-and-storage-admin.md](hands-on-labs/linux-admin/drill-02-filesystem-and-storage-admin.md)
+- Work through [hands-on-labs/linux/lab-02-filesystem-and-io.md](hands-on-labs/linux/lab-02-filesystem-and-io.md)
+- Practice: diagnose a disk-full scenario including deleted-but-open file handles and inode exhaustion
 
-## Week 3: Expert Design And Senior-Level Tradeoffs
+### Day 14 — Practice scenario 2
 
-Goal: think like an owner of high-scale, high-availability, low-latency production systems.
+- Run [mock-interviews/02-distributed-systems-and-resilience.md](mock-interviews/02-distributed-systems-and-resilience.md)
+- Keep answers structured: hypothesis, evidence, action, outcome
+- Score yourself on clarity, tradeoff reasoning, and failure mode coverage
 
-### Day 15
+---
 
-- read [expert/01-linux-networking.md](expert/01-linux-networking.md)
-- work the tail-latency, kernel tuning, and noisy-neighbor scenarios
+## Week 3: Cloud, Infrastructure, and System Design
 
-### Day 16
+Goal: design production-grade systems and reason through cross-layer tradeoffs.
 
-- read [expert/02-kubernetes.md](expert/02-kubernetes.md)
-- answer control plane degradation and multi-cluster resilience prompts
+### Day 15 — System design and cloud architecture
 
-### Day 17
+- Read [foundations/07-system-design-cloud-architecture.md](foundations/07-system-design-cloud-architecture.md)
+- Read [foundations/14-aws-cloud-services-and-platform-design.md](foundations/14-aws-cloud-services-and-platform-design.md)
+- Practice: sketch a multi-AZ web application with VPC design, EKS, RDS Multi-AZ, and Route 53
 
-- read [expert/03-observability-incident-response.md](expert/03-observability-incident-response.md)
-- practice translating SLO burn into executive and engineer language
+### Day 16 — Terraform and IaC
 
-### Day 18
+- Read [foundations/15-terraform-infrastructure-as-code.md](foundations/15-terraform-infrastructure-as-code.md)
+- Practice: describe how you structure Terraform state across infrastructure layers and why
 
-- read [expert/04-cicd-release-security.md](expert/04-cicd-release-security.md)
-- prepare answers on break-glass, provenance, policy enforcement, and release governance
+### Day 17 — Cloud design labs
 
-### Day 19
+- Work through [hands-on-labs/cloud-design/lab-01-gcp-public-platform.md](hands-on-labs/cloud-design/lab-01-gcp-public-platform.md)
+- Read [hands-on-labs/cloud-design/reference-answer-gcp-public-platform.md](hands-on-labs/cloud-design/reference-answer-gcp-public-platform.md)
+- Compare your answer to the reference; identify gaps in failure domain reasoning
 
-- read [expert/05-system-design-cloud.md](expert/05-system-design-cloud.md)
-- focus on low latency, cross-region design, data consistency, and cloud failure domains
+### Day 18 — GPU and AI platform
 
-### Day 20
+- Read [foundations/12-kubernetes-gpu-ai-platforms-and-operators.md](foundations/12-kubernetes-gpu-ai-platforms-and-operators.md)
+- Work through [hands-on-labs/kubernetes/lab-04-gpu-ml-ai-platform-review.md](hands-on-labs/kubernetes/lab-04-gpu-ml-ai-platform-review.md)
+- Read [hands-on-labs/kubernetes/reference-answer-gpu-ml-ai-platform.md](hands-on-labs/kubernetes/reference-answer-gpu-ml-ai-platform.md)
 
-- rehearse your strongest three stories:
-- one incident you led
-- one reliability improvement you drove
-- one difficult debugging case
+### Day 19 — Platform services
 
-### Day 21
+- Read [foundations/20-kafka-and-event-streaming.md](foundations/20-kafka-and-event-streaming.md)
+- Read [foundations/22-http-apis-and-reverse-proxy-paths.md](foundations/22-http-apis-and-reverse-proxy-paths.md)
+- Practice: explain how consumer lag develops and how you diagnose it; describe NGINX upstream config and rate limiting
 
-- run [mock-interviews/03-platform-cloud-and-security.md](mock-interviews/03-platform-cloud-and-security.md)
-- follow up with a written architecture summary in under one page
+### Day 20 — End-to-end composition
 
-## Week 4: Interview Simulation And Targeted Repair
+- Read [foundations/27-end-to-end-project-and-capstone-patterns.md](foundations/27-end-to-end-project-and-capstone-patterns.md)
+- Practice: trace a deployment failure from CI log to pod event to log line, naming each tool at each step
 
-Goal: convert knowledge into confident, interviewer-friendly performance.
+### Day 21 — Practice scenario 3
 
-### Day 22
+- Run [mock-interviews/03-platform-cloud-and-security.md](mock-interviews/03-platform-cloud-and-security.md)
+- Follow up with a written architecture summary in under one page
+- Record what you were confident about and what you hedged on
 
-- re-run the beginner prompts you found hardest
-- force yourself to answer in concise senior language
+---
 
-### Day 23
+## Week 4: Depth, Gaps, and Targeted Repair
 
-- re-run the intermediate prompts you found hardest
-- add one diagram per system design answer
+Goal: convert knowledge into confident, precise execution — including areas you've been avoiding.
 
-### Day 24
+### Day 22 — Remaining foundations
 
-- re-run the expert prompts you found hardest
-- explicitly state tradeoffs, blast radius, and rollback plans
+Pick two you haven't read:
+- [foundations/18-ansible-and-host-automation.md](foundations/18-ansible-and-host-automation.md)
+- [foundations/21-sql-and-relational-data-for-sre.md](foundations/21-sql-and-relational-data-for-sre.md)
+- [foundations/16-git-and-version-control-for-platform-engineers.md](foundations/16-git-and-version-control-for-platform-engineers.md)
+- [foundations/23-azure-devops-crossover.md](foundations/23-azure-devops-crossover.md)
+- [foundations/24-sonarqube-and-code-quality-gates.md](foundations/24-sonarqube-and-code-quality-gates.md)
 
-### Day 25
+### Day 23 — Redo weak scenarios
 
-- run a 60-minute mixed mock from all three mock files
-- record your answers if possible
+- Revisit the mock interview where you struggled most
+- Answer the hardest questions again — without notes, in senior-level language
+- Add tradeoffs and failure modes to every answer
 
-### Day 26
+### Day 24 — Scripting depth
 
-- review [sources-and-references.md](sources-and-references.md) for weak domains only
-- do not try to reread everything
+- Read [foundations/03-bash-and-shell-scripting.md](foundations/03-bash-and-shell-scripting.md) or [foundations/04-python-for-sre.md](foundations/04-python-for-sre.md)
+- Work through [hands-on-labs/bash/lab-03-retry-and-guardrails.md](hands-on-labs/bash/lab-03-retry-and-guardrails.md)
+- Work through [hands-on-labs/python/lab-03-k8s-event-summary.md](hands-on-labs/python/lab-03-k8s-event-summary.md)
 
-### Day 27
+### Day 25 — Mixed mock
 
-- create short cheat sheets for:
-- Linux debugging flow
+- Run one 60-minute mixed scenario drawing from all three mock interview files
+- Practice staying structured under pressure: state the hypothesis, name the command, interpret the output
+
+### Day 26 — Cheat sheets
+
+Build short recall sheets for:
+- Linux debugging flow (60-second system check)
 - Kubernetes pod-to-packet path
-- SLO and alert design
-- deployment safety and rollback
-- GCP to AWS service mapping
+- SLO and burn rate alert design
+- Deployment rollout and rollback procedure
+- Terraform state layer strategy
 
-### Day 28
+### Day 27 — Final system design drill
 
-- do one final Nebius-focused mock
-- sleep, simplify, and optimize for calm execution rather than last-minute breadth
+- Work through [hands-on-labs/cloud-design/lab-04-low-latency-multi-region-control-plane.md](hands-on-labs/cloud-design/lab-04-low-latency-multi-region-control-plane.md)
+- Focus on failure domains, latency tradeoffs, and multi-region consistency
+
+### Day 28 — Review and calibrate
+
+- Read [foundations/00-senior-staff-operating-manual.md](foundations/00-senior-staff-operating-manual.md)
+- Run one final mock scenario
+- Prioritize calm execution over last-minute breadth

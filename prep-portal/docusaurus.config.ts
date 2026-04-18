@@ -5,8 +5,8 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'SRE Interview Prep Portal',
-  tagline: 'Senior to staff-level SRE, platform, Kubernetes, Linux, networking, and cloud architecture practice',
+  title: 'SRE Challenges Portal',
+  tagline: 'Interview prep, MLOps study, and AIOps project navigation in one local portal',
   favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
@@ -57,6 +57,26 @@ const config: Config = {
       } satisfies Preset.Options,
     ],
   ],
+  plugins: [
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'mlops',
+        path: './generated-docs/mlops',
+        routeBasePath: 'mlops-docs',
+        sidebarPath: './sidebarsMlops.ts',
+      },
+    ],
+    [
+      '@docusaurus/plugin-content-docs',
+      {
+        id: 'aiops',
+        path: './generated-docs/aiops',
+        routeBasePath: 'aiops-docs',
+        sidebarPath: './sidebarsAiops.ts',
+      },
+    ],
+  ],
   themes: [
     [
       require.resolve('@easyops-cn/docusaurus-search-local'),
@@ -64,7 +84,7 @@ const config: Config = {
         hashed: true,
         indexDocs: true,
         indexBlog: false,
-        docsRouteBasePath: ['/docs'],
+        docsRouteBasePath: ['/docs', '/mlops-docs', '/aiops-docs'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
       },
@@ -78,7 +98,7 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'SRE Prep Portal',
+      title: 'SRE Challenges',
       logo: {
         alt: 'SRE Prep Portal Logo',
         src: 'img/logo.svg',
@@ -88,9 +108,20 @@ const config: Config = {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: 'Prep Pack',
+          label: 'Interview Prep',
         },
         {to: '/today', label: 'Today', position: 'left'},
+        {
+          label: 'Projects',
+          position: 'left',
+          items: [
+            {to: '/library', label: 'Document Library'},
+            {to: '/mlops', label: 'MLOps Hub'},
+            {to: '/mlops-docs/overview', label: 'MLOps Docs'},
+            {to: '/aiops', label: 'AIOps Hub'},
+            {to: '/aiops-docs/overview', label: 'AIOps Docs'},
+          ],
+        },
         {type: 'search', position: 'right'},
         {to: '/workspace', label: 'Answer Workspace', position: 'left'},
         {to: '/docs/learning-path', label: 'Learning Path', position: 'left'},
@@ -105,7 +136,7 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Interview Prep',
           items: [
             {
               label: 'Learning Path',
@@ -114,6 +145,31 @@ const config: Config = {
             {
               label: 'Hands-On Labs',
               to: '/docs/hands-on-labs',
+            },
+          ],
+        },
+        {
+          title: 'Library',
+          items: [
+            {
+              label: 'Document Library',
+              to: '/library',
+            },
+            {
+              label: 'MLOps Hub',
+              to: '/mlops',
+            },
+            {
+              label: 'MLOps Docs',
+              to: '/mlops-docs/overview',
+            },
+            {
+              label: 'AIOps Hub',
+              to: '/aiops',
+            },
+            {
+              label: 'AIOps Docs',
+              to: '/aiops-docs/overview',
             },
           ],
         },

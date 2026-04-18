@@ -1,6 +1,6 @@
-# Mock Interviews
+# Practice Scenarios
 
-Use these after you have worked through at least the beginner and intermediate tracks.
+Use these after working through at least Phase 1 (Linux/networking) and Phase 2 (Kubernetes) of the [learning path](../learning-path.md).
 
 Recommended order:
 
@@ -13,4 +13,4 @@ Practice mode:
 - 45 to 60 minutes per mock
 - answer aloud without notes first
 - spend 10 minutes writing what you missed
-- revisit the level files only for the exact gaps you found
+- revisit the relevant foundation guides only for the exact gaps you found

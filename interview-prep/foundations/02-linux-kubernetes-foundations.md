@@ -1,10 +1,20 @@
 # Foundations: Linux Internals And How Kubernetes Really Uses Them
 
-Kubernetes sits on top of Linux, not beside it. Senior engineers usually become much stronger in Kubernetes interviews the moment they stop treating Pods and Services as abstract magic objects.
+Kubernetes is not a replacement for Linux knowledge. It is a control layer sitting on top of Linux processes, cgroups, namespaces, filesystems, networking, and kernel behavior.
+
+The more senior you become, the less you say “Kubernetes is broken” and the more you say, “the kubelet is healthy, but the node dataplane is failing for new Pod sandboxes,” or “the scheduler is fine, but the real problem is memory pressure and cgroup reclaim on two worker nodes.”
 
 ## Mentor Mode
 
-When something in Kubernetes is slow, failing, or weird, ask:
+When Kubernetes feels complicated, reduce it to this:
+
+1. What was the desired state?
+2. Which component is responsible for making that state real?
+3. Which Linux primitive actually enforces the behavior?
+4. Is the problem in the control plane, the node plane, or the dataplane?
+5. What evidence would prove that?
+
+That mental model is what takes you from “kubectl user” to real production operator.
 
 ## Answer This In The Portal
 
@@ -12,26 +22,77 @@ When something in Kubernetes is slow, failing, or weird, ask:
 - Use this structure while answering: [answers-template.md](../answers-template.md)
 - Guided review flow: [interactive-study.mdx](../interactive-study.mdx)
 
-1. Is this desired-state logic failing, or runtime behavior failing?
-2. Is the problem in the control plane, node plane, or dataplane?
-3. Which Linux primitive is underneath the symptom?
-4. Which component is enforcing the behavior: scheduler, kubelet, runtime, kernel, or CNI?
+## The Three-Plane Model
 
-That framing is often the difference between an intermediate answer and a senior one.
+This is one of the cleanest ways to think in interviews.
 
-## Linux Primitives You Need To Truly Own
+### Control Plane
+
+This is where desired state is stored and decisions are made:
+
+- API server
+- etcd
+- scheduler
+- controller manager
+
+Symptoms from this plane:
+
+- objects do not update
+- new Pods do not schedule
+- node or workload status becomes stale
+- control loops lag or fail
+
+### Node Plane
+
+This is where the work is actually run:
+
+- kubelet
+- container runtime
+- cgroups
+- filesystems
+- volume mounts
+- node OS
+
+Symptoms from this plane:
+
+- image pulls fail
+- containers will not start
+- probes flap
+- node pressure causes evictions
+- logs or volumes behave strangely
+
+### Dataplane
+
+This is where packets are forwarded and policies are enforced:
+
+- Pod network namespace
+- veth pairs
+- CNI setup
+- kube-proxy or eBPF service logic
+- iptables, nftables, or BPF policy
+- conntrack
+
+Symptoms from this plane:
+
+- Pod-to-Pod failures
+- Service VIP failures
+- DNS timeout in only some Pods
+- network policy mismatches
+- cross-node reachability problems
+
+## Linux Primitives You Must Own
 
 ### Processes
 
-Containers still run normal Linux processes.
+Containers still run as ordinary Linux processes.
 
-That means each process has:
+That means every container has:
 
-- a PID
-- scheduling state
+- PID
+- scheduler state
 - memory map
 - file descriptors
-- sockets
+- open sockets
 - cgroup membership
 - namespace membership
 
@@ -46,24 +107,29 @@ strace -p <pid>
 cat /proc/<pid>/status
 ```
 
+Mentor note:
+
+- if you cannot inspect a Linux process, you are not really debugging the container yet
+
 ### Namespaces
 
-Namespaces isolate views of system resources.
+Namespaces isolate resource views.
 
-The important ones for containers:
+The most important for containers:
 
-- `pid`: process IDs
-- `net`: interfaces, routes, sockets, firewall rules
-- `mnt`: mount view
-- `uts`: hostname
-- `ipc`: shared memory and semaphores
-- `user`: UID and GID mapping
+- `pid`
+- `net`
+- `mnt`
+- `uts`
+- `ipc`
+- `user`
 
-Why you care:
+Why this matters in Kubernetes:
 
-- every Pod usually has its own network namespace
-- sidecars share that namespace with the app in the same Pod
-- debugging a Pod network issue often means entering the right namespace
+- a Pod usually has its own network namespace
+- containers inside the same Pod share that namespace
+- sidecars and the main app see the same Pod IP
+- many “Pod networking” issues are namespace-level Linux issues
 
 Useful commands:
 
@@ -71,30 +137,21 @@ Useful commands:
 lsns
 nsenter --target <pid> --net
 nsenter --target <pid> --mount
-ip netns
+readlink /proc/<pid>/ns/net
 ```
 
 ### cgroups v2
 
-cgroups organize and limit resource usage hierarchically.
+Requests and limits eventually become kernel-enforced behavior through cgroups.
 
-Why senior engineers care:
+Important concepts:
 
-- Kubernetes requests and limits eventually become cgroup behavior
-- CPU throttling, memory protection, and reclaim are visible here
-- node pain often appears in cgroup or PSI signals before app teams notice
-
-Important cgroup v2 files to understand conceptually:
-
-- `cpu.max`
-- `cpu.weight`
-- `cpu.stat`
-- `memory.current`
-- `memory.max`
-- `memory.min`
-- `memory.high`
-- `memory.events`
-- `cpu.pressure`, `memory.pressure`, `io.pressure`
+- `cpu.max` and throttling
+- `cpu.weight` and relative sharing
+- `memory.max` for hard caps
+- `memory.high` for reclaim pressure before OOM
+- `memory.events` for pressure clues
+- pressure stall information for queueing pain
 
 Useful commands:
 
@@ -102,43 +159,27 @@ Useful commands:
 mount | grep cgroup
 cat /sys/fs/cgroup/cgroup.controllers
 cat /proc/cgroups
-find /sys/fs/cgroup -maxdepth 2 -type f | head
-```
-
-### Pressure Stall Information
-
-PSI is one of the most senior-useful Linux concepts because it helps you see contention before hard failure.
-
-PSI tells you when tasks are stalled waiting on:
-
-- CPU
-- memory
-- IO
-
-Why it matters:
-
-- utilization alone can hide queuing pain
-- memory pressure can harm latency long before OOM
-- IO stalls can make a system "slow" without pegging CPU
-
-Useful commands:
-
-```bash
+find /sys/fs/cgroup -maxdepth 3 -type f | head
 cat /proc/pressure/cpu
 cat /proc/pressure/memory
 cat /proc/pressure/io
 ```
 
-### Filesystems And Overlay Layers
+Senior interview rule:
 
-Containers use Linux filesystems too.
+- do not just say “CPU high”
+- explain whether this is saturation, throttling, runnable queueing, reclaim, or IO stall
 
-Relevant facts:
+### Filesystems And Volumes
 
-- image layers are often overlay-based
-- writable layers are not magic and can behave differently from direct host filesystems
-- kubelet mounts volumes into Pods
-- inode exhaustion and disk pressure can break "healthy looking" workloads
+Containers use Linux filesystems and mounted storage. Nothing magical here.
+
+Operationally important:
+
+- image layers often use overlay filesystems
+- writable layers are not a durable storage strategy
+- kubelet mounts persistent volumes and projected config
+- disk pressure and inode exhaustion can break nodes without obvious app-level errors
 
 Useful commands:
 
@@ -148,243 +189,364 @@ findmnt
 df -h
 df -i
 du -sh /var/lib/containerd 2>/dev/null
-du -sh /var/lib/docker 2>/dev/null
+du -sh /var/lib/kubelet 2>/dev/null
 ```
 
-### Networking Dataplane: iptables, nftables, eBPF
+### Linux Networking On A Node
 
-Common possibilities:
+The node dataplane may involve:
 
-- iptables NAT and filtering
-- nftables-based filtering
-- eBPF-based service or policy logic
-
-You do not need vendor-specific detail first. You do need to know:
-
-- where Service translation might happen
-- where policy might be enforced
-- where conntrack is used
-- what packet visibility changes under eBPF-heavy dataplanes
+- veth pairs
+- bridge or routed Pod networking
+- iptables or nftables
+- eBPF programs and maps
+- conntrack state
 
 Useful commands:
 
 ```bash
+ip addr
+ip route
+ip link
+ss -tulpn
 iptables-save
 nft list ruleset
 bpftool prog show
 bpftool map show
+conntrack -S
 ```
 
 ## Kubernetes Components Through A Linux Lens
 
-### kube-scheduler
+### API Server
 
-The scheduler decides placement, not execution.
+The API server is the front door to cluster state.
 
-Senior-level detail to remember:
+If it is impaired:
 
-- it watches unscheduled Pods
-- filters nodes that are invalid for placement
-- scores viable nodes
-- binds Pod to node
-- it reasons from requests, constraints, taints, affinity, topology, and policy
+- writes may fail
+- controllers lag
+- scheduler decisions slow down
+- kubelets may keep running existing workloads while the cluster feels stale
 
-What the scheduler does not do:
+### etcd
 
-- it does not make CPU cycles appear
-- it does not fix node-local runtime or dataplane problems
+etcd is the authoritative state store, not a random implementation detail.
+
+Operationally, you should care about:
+
+- quorum
+- write latency
+- compaction
+- defragmentation
+- backup and restore procedures
+
+Staff-level note:
+
+- many “cluster failures” are actually state-store or control-plane health problems
+
+### Scheduler
+
+The scheduler decides placement from declared constraints.
+
+It evaluates:
+
+- resource requests
+- taints and tolerations
+- affinity and anti-affinity
+- topology spread
+- node selectors
+- custom scheduling constraints
+
+The scheduler does not solve:
+
+- node runtime failure
+- image pull latency
+- broken CNI
+- packet loss
 
 ### kubelet
 
-The kubelet is the primary node agent.
+The kubelet is the most important node agent to understand.
 
-Operationally, kubelet:
+It:
 
-- watches PodSpecs meant for the node
-- asks the runtime to start and stop containers
-- runs probes
-- manages local volume mounts
-- reports node and pod status
-- handles local eviction under pressure
+- watches Pods assigned to the node
+- asks the runtime to realize sandboxes and containers
+- manages probes
+- mounts volumes
+- reports status
+- participates in eviction under pressure
 
-If kubelet is unhealthy, the cluster can feel haunted:
+If kubelet is sick:
 
-- probes flap
-- pod status goes stale
-- logs still exist but state transitions get weird
-- node pressure decisions may look confusing
+- status becomes misleading
+- Pods may look stuck between states
+- probes become noisy
+- log access and runtime behavior diverge
+
+Useful commands:
+
+```bash
+systemctl status kubelet
+journalctl -u kubelet -n 200
+crictl ps
+crictl pods
+```
 
 ### Container Runtime
 
-The runtime:
+The runtime is where sandboxes and containers become real processes.
 
-- pulls images
-- creates container sandboxes
-- starts and stops processes
-- wires namespace and cgroup setup
-
-If runtime behavior breaks, Kubernetes symptoms may look like:
+If the runtime breaks, symptoms may appear as:
 
 - `ImagePullBackOff`
-- container startup delay
-- logs missing or delayed
-- sandbox creation failures
+- `CrashLoopBackOff`
+- sandbox creation errors
+- failed mounts
+- missing logs
 
-### CNI And Pod Networking
+Useful commands:
 
-At a high level, a Pod often gets:
+```bash
+crictl ps -a
+crictl inspect <container-id>
+crictl logs <container-id>
+ctr -n k8s.io containers list
+```
 
-- its own network namespace
-- a veth pair
+## How Pod Networking Really Works
+
+At a high level, a Pod usually gets:
+
+- a network namespace
+- one or more interfaces
 - a Pod IP
 - routes
-- DNS configuration
-- packet handling integrated into node networking
+- DNS config
+- connectivity controlled by the node dataplane
 
-If Pod-to-Pod traffic fails, think:
+When traffic fails, split it into:
 
-- namespace and interface setup
-- routes
-- policy enforcement
-- node dataplane state
-- cross-node overlay or routing path
+1. interface and namespace creation
+2. local routing
+3. Service translation
+4. policy enforcement
+5. cross-node transport
+6. DNS resolution
 
-### Service Networking
+This prevents vague answers like “CNI issue.”
 
-Service traffic usually depends on:
+## Services, EndpointSlices, And Readiness
 
-- Service VIP or proxy path
-- EndpointSlice contents
-- ready endpoints
-- kube-proxy or eBPF dataplane logic
-- node-local conntrack state
+Senior engineers know the distinction between:
 
-Senior warning:
+- a healthy container
+- a ready Pod
+- a reachable endpoint
+- a healthy Service backend
 
-- a healthy Pod is not automatically a healthy Service backend
+Service traffic often depends on:
 
-### Logging
+- Service VIP
+- EndpointSlice correctness
+- readiness gating
+- kube-proxy or eBPF dataplane rules
+- conntrack behavior on the node
 
-Important operational fact:
+Useful commands:
 
-- `kubectl logs` is convenient, but it is not a full logging architecture
-- kubelet usually reads container log files from node storage
-- node-local log rotation and pod death can hide useful evidence
+```bash
+kubectl get svc,endpoints,endpointslices -A
+kubectl describe svc <name>
+kubectl get pod -o wide
+```
+
+Mentor note:
+
+- “Pod is running” does not prove “Service is healthy”
+
+## The Questions Behind Common Symptoms
+
+### Symptom: Pod Will Not Start
+
+Ask:
+
+- did the scheduler bind the Pod
+- did kubelet receive and process it
+- did image pull succeed
+- did sandbox creation succeed
+- did volume setup succeed
+- did the process start and exit
+
+### Symptom: Pod Starts But Never Becomes Ready
+
+Ask:
+
+- is the app listening on the expected port
+- are startup or readiness probes wrong
+- is dependency access blocked
+- is DNS resolution failing
+- is sidecar init delaying readiness
+
+### Symptom: Service Fails But Pod Is Running
+
+Ask:
+
+- is the Pod marked ready
+- does EndpointSlice include the Pod
+- does the Service selector match
+- is kube-proxy or eBPF dataplane healthy
+- does network policy block the path
+
+### Symptom: Only One Node Has Many Failures
+
+Ask:
+
+- kubelet health
+- disk pressure or inode exhaustion
+- CNI state drift
+- conntrack pressure
+- MTU mismatch
+- DNS cache issue on that node
+- runtime instability
 
 ## Resource Management The Senior Way
 
 ### Requests Versus Limits
 
-Requests influence scheduling.
+Requests affect scheduling.
 
-Limits influence enforcement.
+Limits affect runtime enforcement.
 
-Problems happen when teams:
+If you say only that, you are still at the surface.
 
-- set requests too low, hiding real capacity needs
-- set CPU limits that cause throttling in latency-sensitive paths
-- set memory limits without understanding reclaim and OOM behavior
+Go deeper:
 
-### QoS Classes
+- low request plus high actual use can cause noisy-neighbor behavior
+- low CPU limit can cause throttling and latency spikes
+- memory limit can create hard kills
+- `memory.high` style reclaim pressure can hurt before OOM
+- overcommitting nodes is a policy decision, not an accident
 
-Kubernetes uses QoS classes partly to guide eviction behavior:
+### Eviction Thinking
 
-- `Guaranteed`
-- `Burstable`
-- `BestEffort`
+Kubernetes can evict Pods due to:
 
-But do not oversimplify:
+- memory pressure
+- disk pressure
+- inode pressure
+- ephemeral storage pressure
 
-- QoS is not a magic protection shield
-- badly set requests still create pain
-- cgroup behavior and node pressure matter underneath
+Interview tip:
 
-### CPU Throttling Versus CPU Saturation
+- know the difference between app crash, OOM kill, and kubelet eviction
 
-These are not the same:
+## Linux Commands That Matter During Kubernetes Incidents
 
-- saturation means CPUs are genuinely busy
-- throttling means a cgroup is being limited even if host capacity exists elsewhere
-
-This matters in Kubernetes because a container can be slow on an otherwise not-fully-loaded node.
-
-### Memory Pressure Before OOM
-
-Senior engineers do not wait for OOM kills to say "memory problem."
-
-Symptoms can appear earlier:
-
-- latency rises
-- page cache reclaim increases
-- disk IO rises
-- PSI memory pressure increases
-- kubelet begins considering eviction candidates
-
-### Disk Pressure
-
-Kubernetes can experience pressure from:
-
-- root filesystem usage
-- image filesystem usage
-- inode exhaustion
-- log growth
-
-Pod behavior may degrade long before app owners understand why.
-
-## Mentor Walkthrough: Pod Slow On One Node
-
-Scenario: Pod is slow only on one node.
-
-Think in this order:
-
-1. compare one good node and one bad node
-2. check if Pod placement is the main differentiator
-3. inspect node pressure, runtime health, kubelet logs, and service path
-4. inspect cgroup behavior if throttling or memory pressure is plausible
-5. inspect networking if only remote dependencies are slow
-
-Helpful commands:
+### Node State
 
 ```bash
-kubectl describe pod <pod>
-kubectl describe node <node>
-kubectl top pod <pod>
-kubectl top node
-kubectl get events -A --sort-by=.lastTimestamp
-journalctl -u kubelet
-crictl ps
-crictl inspect <container-id>
-cat /proc/pressure/cpu
-cat /proc/pressure/memory
-ip addr
-ip route
-ss -tanp
+uptime
+free -m
+vmstat 1
+iostat -xz 1
+df -h
+df -i
 ```
 
-## Kubernetes Packet Path In Plain Language
+### Process And Runtime
 
-For traffic from Pod A to Service B:
+```bash
+ps aux --sort=-%mem | head
+ps aux --sort=-%cpu | head
+crictl ps -a
+crictl stats
+journalctl -u kubelet -n 200
+```
 
-1. process in Pod A opens socket
-2. packet leaves Pod A network namespace
-3. node dataplane translates Service VIP or routes toward backend
-4. backend Pod IP is selected from ready endpoints
-5. packet crosses node-local or cross-node path
-6. packet enters backend Pod network namespace
-7. backend process receives it
+### Network
 
-At least five layers can break this:
+```bash
+ip addr
+ip route
+ss -tulpn
+iptables-save | head -200
+conntrack -S
+tcpdump -ni any host <pod-ip>
+```
 
-- client resolver
-- client Pod namespace
-- node dataplane
-- cross-node path
-- backend readiness or local app behavior
+### Kubernetes Objects
 
-## Senior Practice Drills
+```bash
+kubectl get nodes
+kubectl describe node <node>
+kubectl get pods -A -o wide
+kubectl describe pod <pod> -n <ns>
+kubectl get events -A --sort-by=.lastTimestamp
+```
 
-1. Explain how a Pod gets CPU time from the Linux scheduler.
-2. Explain how a memory limit can create latency before a kill.
-3. Explain how kubelet and runtime divide responsibility.
-4. Explain why a Service failure might be healthy Pods plus stale endpoints.
-5. Explain how cgroup v2 and QoS connect conceptually.
+## How Linux And Kubernetes Work Hand In Hand
+
+This is the bridge interviewers care about:
+
+- Kubernetes declares desired state
+- kubelet and runtime translate that into processes, namespaces, mounts, and cgroups
+- the kernel enforces scheduling, memory, IO, and networking behavior
+- CNI and dataplane logic wire Pod and Service traffic into Linux networking
+- observability and troubleshooting still depend on Linux signals underneath
+
+Once this clicks, Kubernetes becomes much less mystical.
+
+## Staff-Level Drills
+
+### Drill 1: Pod Ready In One Zone, Failing In Another
+
+Think:
+
+- topology-specific dependency reachability
+- zone-local DNS or LB path
+- CNI differences
+- route or MTU mismatch
+- node image or kernel drift
+
+### Drill 2: API Latency Spikes After CPU Limits Added
+
+Think:
+
+- cgroup CPU throttling
+- request concurrency
+- probe sensitivity
+- tail latency under quota pressure
+
+### Drill 3: New Pods Cannot Reach A Database
+
+Think:
+
+- DNS for the database name
+- egress network policy
+- route and firewall path
+- NAT or SNAT expectations
+- database allowlist assumptions
+
+## Reinforcement From Your Archive
+
+Use these after this guide if you want more examples:
+
+- [06-kubernetes-networking-deep-dive.md](06-kubernetes-networking-deep-dive.md)
+- [12-kubernetes-gpu-ai-platforms-and-operators.md](12-kubernetes-gpu-ai-platforms-and-operators.md)
+- [25-yaml-and-kubernetes-manifest-design.md](25-yaml-and-kubernetes-manifest-design.md)
+- [13-docker-and-container-runtime.md](13-docker-and-container-runtime.md)
+- [26-devops-troubleshooting-and-security-errors.md](26-devops-troubleshooting-and-security-errors.md)
+
+## What Good Looks Like In An Interview
+
+If someone asks, “Why would a Service fail even when Pods are running?”, a strong answer sounds like this:
+
+1. I would separate container health from Service reachability.
+2. I would verify readiness, selectors, and EndpointSlice population.
+3. I would then check whether kube-proxy or the eBPF dataplane is programming the Service path correctly.
+4. If it is scoped to one node, I would inspect node-local networking, conntrack, and CNI state.
+5. I would confirm whether this is a control-plane state issue or a dataplane delivery issue before proposing fixes.
+
+That answer shows Linux awareness, Kubernetes awareness, and operational discipline together.

@@ -10,7 +10,7 @@ const days = [
     links: [
       ['/docs/foundations/linux-and-network-administration', 'Linux and network administration'],
       ['/docs/foundations/linux-debug-playbook', 'Linux debug playbook'],
-      ['/docs/hands-on-labs/linux-admin', 'Linux admin drills'],
+      ['/docs/hands-on-labs/linux-admin/README', 'Linux admin drills'],
     ],
   },
   {
@@ -18,7 +18,7 @@ const days = [
     links: [
       ['/docs/foundations/networking-fundamentals', 'Networking fundamentals'],
       ['/docs/foundations/cloud-networking-and-kubernetes-networking', 'Cloud and Kubernetes networking'],
-      ['/docs/hands-on-labs/networking', 'Networking labs'],
+      ['/docs/hands-on-labs/networking/README', 'Networking labs'],
     ],
   },
   {
@@ -26,29 +26,30 @@ const days = [
     links: [
       ['/docs/foundations/linux-kubernetes-foundations', 'Linux and Kubernetes foundations'],
       ['/docs/foundations/kubernetes-networking-deep-dive', 'Kubernetes networking deep dive'],
-      ['/docs/beginner/kubernetes', 'Beginner Kubernetes track'],
+      ['/docs/foundations/yaml-and-kubernetes-manifest-design', 'YAML and manifest design'],
     ],
   },
   {
     title: 'Day 4: Expert Kubernetes And AI Platform Topics',
     links: [
       ['/docs/foundations/kubernetes-gpu-ai-platforms-and-operators', 'GPU, AI, operators, and mesh foundations'],
-      ['/docs/expert/kubernetes', 'Expert Kubernetes track'],
-      ['/docs/hands-on-labs/kubernetes', 'Kubernetes labs'],
+      ['/docs/foundations/docker-and-container-runtime', 'Docker and container runtime'],
+      ['/docs/hands-on-labs/kubernetes/README', 'Kubernetes labs'],
     ],
   },
   {
     title: 'Day 5: Observability And Incident Response',
     links: [
       ['/docs/foundations/observability-slos-and-incident-response', 'Observability foundation'],
-      ['/docs/expert/observability-incident-response', 'Expert observability track'],
+      ['/docs/foundations/prometheus-grafana-and-alertmanager', 'Prometheus, Grafana, and Alertmanager'],
+      ['/docs/foundations/devops-troubleshooting-and-security-errors', 'Troubleshooting patterns'],
     ],
   },
   {
     title: 'Day 6: System Design And Cloud Architecture',
     links: [
       ['/docs/foundations/system-design-cloud-architecture', 'System design foundation'],
-      ['/docs/expert/system-design-cloud', 'Expert architecture track'],
+      ['/docs/foundations/aws-cloud-services-and-platform-design', 'AWS cloud services'],
       ['/docs/hands-on-labs/cloud-design/reference-answer-gcp-public-platform', 'Reference architecture answer'],
     ],
   },
@@ -56,28 +57,31 @@ const days = [
     title: 'Day 7: CI/CD And Platform Security',
     links: [
       ['/docs/foundations/cicd-trusted-delivery-and-platform-security', 'Trusted delivery foundation'],
-      ['/docs/expert/cicd-release-security', 'Expert CI/CD and security track'],
+      ['/docs/foundations/delivery-systems-jenkins-github-actions-and-argocd', 'Jenkins, GitHub Actions, and ArgoCD'],
+      ['/docs/foundations/git-and-version-control-for-platform-engineers', 'Git for platform engineers'],
     ],
   },
   {
     title: 'Day 8: Cloud Networking And VPC Design',
     links: [
-      ['/docs/hands-on-labs/cloud-networking', 'Cloud networking drills'],
+      ['/docs/hands-on-labs/cloud-networking/README', 'Cloud networking drills'],
       ['/docs/foundations/cloud-networking-and-kubernetes-networking', 'Cloud networking foundation'],
+      ['/docs/foundations/terraform-infrastructure-as-code', 'Terraform and IaC'],
     ],
   },
   {
     title: 'Day 9: Mock Interview Day',
     links: [
-      ['/docs/mock-interviews/nebius-linux-kubernetes-troubleshooting', 'Nebius troubleshooting mock'],
-      ['/docs/mock-interviews/distributed-systems-and-resilience', 'Distributed systems mock'],
+      ['/docs/mock-interviews/01-nebius-linux-kubernetes-troubleshooting', 'Nebius troubleshooting mock'],
+      ['/docs/mock-interviews/02-distributed-systems-and-resilience', 'Distributed systems mock'],
+      ['/docs/mock-interviews/03-platform-cloud-and-security', 'Platform and security mock'],
     ],
   },
   {
     title: 'Day 10: Final Tightening',
     links: [
+      ['/docs/foundations/end-to-end-project-and-capstone-patterns', 'End-to-end project patterns'],
       ['/docs/learning-path', 'Learning path'],
-      ['/docs/answers-template', 'Answer template'],
       ['/workspace', 'Answer workspace'],
     ],
   },
@@ -85,11 +89,11 @@ const days = [
 
 export default function TodayPage(): React.ReactNode {
   return (
-    <Layout title="Today Dashboard" description="Your 10-day interview sprint dashboard.">
+    <Layout title="Today Dashboard" description="Your 10-day sprint dashboard.">
       <main className="container margin-top--lg margin-bottom--xl">
         <Heading as="h1">Today Dashboard</Heading>
         <p>
-          Use this as your daily entry page for the next 10 days. Pick today’s
+          Use this as your daily entry page for the next 10 days. Pick today's
           block, do one drill, write one answer, and send it to me for review.
         </p>
         <div className="row">
