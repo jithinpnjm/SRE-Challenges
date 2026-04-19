@@ -1,11 +1,11 @@
 import React from 'react';
-import SREMentor from '@site/src/components/SREMentor';
+import { AIAgent } from '@site/src/components/AIAgent';
 
 export default function Root({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <>
       {children}
-      <SREMentor />
+      <AIAgent />
     </>
   );
 }

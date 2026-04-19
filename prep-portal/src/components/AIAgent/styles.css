@@ -1,0 +1,109 @@
+.ai-agent-fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 60px;
+  height: 60px;
+  border-radius: 30px;
+  background: var(--ifm-color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  border: 4px solid var(--ifm-background-color);
+  transition: all 0.3s ease;
+}
+
+.ai-agent-fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+}
+
+.ai-agent-panel {
+  position: fixed;
+  bottom: 6rem;
+  right: 2rem;
+  width: 350px;
+  max-height: 500px;
+  background: var(--ifm-background-color);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-agent-header {
+  padding: 1rem;
+  background: var(--ifm-color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ai-agent-content {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  min-height: 200px;
+}
+
+.ai-agent-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-transcript {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ifm-color-content);
+  white-space: pre-wrap;
+}
+
+.ai-transcript .speaker {
+  font-weight: bold;
+  color: var(--ifm-color-primary);
+}
+
+.ai-status-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ai-btn-voice {
+  width: 50px;
+  height: 50px;
+  border-radius: 25px;
+  border: none;
+  background: var(--ifm-color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ai-btn-voice.active {
+  background: #ff4444;
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
+  70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(255, 68, 68, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
+}
