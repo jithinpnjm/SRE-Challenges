@@ -43,16 +43,9 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
   const nextStartTimeRef = useRef<number>(0);
   const transcriptRef = useRef<string>("");  // always current, safe in closures
 
-  // Keep ref in sync and save to localStorage on every transcript change
+  // Keep ref in sync — do NOT save to localStorage here (causes re-render churn)
   useEffect(() => {
     transcriptRef.current = transcript;
-    if (transcript) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({
-        transcript,
-        page: window.location.pathname,
-        savedAt: Date.now(),
-      }));
-    }
   }, [transcript]);
 
   const stopAllAudio = useCallback(() => {
@@ -81,6 +74,7 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
+    clearInterval((sessionRef as any)?._saveInterval);
     stopAllAudio();
     // Final save on disconnect (ref is always current, no stale closure)
     if (transcriptRef.current) {
@@ -94,9 +88,21 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
     setIsConnecting(false);
   }, [stopAllAudio]);
 
+  const saveSession = useCallback(() => {
+    const t = transcriptRef.current;
+    if (t) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        transcript: t,
+        page: window.location.pathname,
+        savedAt: Date.now(),
+      }));
+    }
+  }, []);
+
   const playPCMMessage = useCallback(async (base64: string) => {
     if (!audioContextRef.current) return;
     const ctx = audioContextRef.current;
+    if (ctx.state === 'suspended') await ctx.resume();
 
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -224,6 +230,9 @@ Immediately pick up exactly where you left off — acknowledge the interruption 
           onopen: () => {
             setActive(true);
             setIsConnecting(false);
+            // Save session every 10s in case of abrupt disconnect
+            const saveInterval = setInterval(saveSession, 10000);
+            (sessionRef as any)._saveInterval = saveInterval;
           },
           onmessage: async (message: any) => {
             if (message.serverContent?.interrupted) {
@@ -236,16 +245,19 @@ Immediately pick up exactly where you left off — acknowledge the interruption 
               return;
             }
 
-            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio) playPCMMessage(audio);
-
-            const text = message.serverContent?.modelTurn?.parts?.[0]?.text;
-            if (text) {
-              setTranscript(prev => {
-                const updated = prev + " " + text;
-                if (onTranscriptUpdate) onTranscriptUpdate(updated);
-                return updated;
-              });
+            // Iterate ALL parts — audio chunks and text can be in any part
+            const parts = message.serverContent?.modelTurn?.parts || [];
+            for (const part of parts) {
+              if (part.inlineData?.data) {
+                playPCMMessage(part.inlineData.data);
+              }
+              if (part.text) {
+                setTranscript(prev => {
+                  const updated = prev + " " + part.text;
+                  if (onTranscriptUpdate) onTranscriptUpdate(updated);
+                  return updated;
+                });
+              }
             }
 
             const userText = message.serverContent?.inputAudioTranscription?.text;
