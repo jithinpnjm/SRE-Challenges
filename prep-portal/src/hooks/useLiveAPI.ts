@@ -41,15 +41,19 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
   const nextStartTimeRef = useRef<number>(0);
-  // Save transcript to localStorage every 5s while active
+  const transcriptRef = useRef<string>("");  // always current, safe in closures
+
+  // Keep ref in sync and save to localStorage on every transcript change
   useEffect(() => {
-    if (active && transcript) {
-      const timer = setTimeout(() => {
-        localStorage.setItem(SESSION_KEY, transcript);
-      }, 5000);
-      return () => clearTimeout(timer);
+    transcriptRef.current = transcript;
+    if (transcript) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        transcript,
+        page: window.location.pathname,
+        savedAt: Date.now(),
+      }));
     }
-  }, [transcript, active]);
+  }, [transcript]);
 
   const stopAllAudio = useCallback(() => {
     audioQueueRef.current.forEach(node => {
@@ -78,10 +82,14 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       audioContextRef.current = null;
     }
     stopAllAudio();
-    setTranscript(prev => {
-      if (prev) localStorage.setItem(SESSION_KEY, prev);
-      return prev;
-    });
+    // Final save on disconnect (ref is always current, no stale closure)
+    if (transcriptRef.current) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        transcript: transcriptRef.current,
+        page: window.location.pathname,
+        savedAt: Date.now(),
+      }));
+    }
     setActive(false);
     setIsConnecting(false);
   }, [stopAllAudio]);
@@ -179,11 +187,25 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
 
       // Load last session from localStorage
       let sessionContext = '';
-      const lastTranscript = localStorage.getItem(SESSION_KEY);
-      if (lastTranscript && lastTranscript.length > 50) {
-        const snippet = lastTranscript.slice(-2000);
-        setTranscript('[Previous session restored]\n' + lastTranscript.slice(-1000));
-        sessionContext = `\n\nPREVIOUS SESSION CONTEXT:\n"""\n${snippet}\n"""\nBriefly acknowledge what was covered last time and ask if they want to continue or start something new.`;
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          const { transcript: lastT, page: lastPage, savedAt } = saved;
+          const minutesAgo = Math.round((Date.now() - savedAt) / 60000);
+          if (lastT && lastT.length > 50) {
+            const snippet = lastT.slice(-3000);
+            setTranscript('[Resumed from last session]\n' + lastT.slice(-1500));
+            transcriptRef.current = lastT;
+            sessionContext = `\n\nSESSION RESUME CONTEXT:
+The session was interrupted ${minutesAgo} minutes ago. The user was on page: ${lastPage || 'unknown'}.
+Last conversation:\n"""\n${snippet}\n"""
+INSTRUCTIONS: Do NOT start fresh. Do NOT introduce yourself again. Do NOT ask what they want to study.
+Immediately pick up exactly where you left off — acknowledge the interruption briefly (e.g. "We got cut off — let me pick up where we were.") and continue teaching the same topic/section.`;
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
       }
 
       const ai = new GoogleGenAI({ apiKey });
