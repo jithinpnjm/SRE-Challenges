@@ -43,10 +43,14 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
   const nextStartTimeRef = useRef<number>(0);
   const transcriptRef = useRef<string>("");  // always current, safe in closures
 
-  // Keep ref in sync — do NOT save to localStorage here (causes re-render churn)
-  useEffect(() => {
-    transcriptRef.current = transcript;
-  }, [transcript]);
+  // Helper: update both state and ref atomically
+  const appendTranscript = useCallback((updater: (prev: string) => string) => {
+    setTranscript(prev => {
+      const next = updater(prev);
+      transcriptRef.current = next;
+      return next;
+    });
+  }, []);
 
   const stopAllAudio = useCallback(() => {
     audioQueueRef.current.forEach(node => {
@@ -200,14 +204,20 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
           const { transcript: lastT, page: lastPage, savedAt } = saved;
           const minutesAgo = Math.round((Date.now() - savedAt) / 60000);
           if (lastT && lastT.length > 50) {
-            const snippet = lastT.slice(-3000);
-            setTranscript('[Resumed from last session]\n' + lastT.slice(-1500));
+            const lastLines = lastT.split('\n').filter(Boolean).slice(-20).join('\n');
+            setTranscript('[Resumed — ' + minutesAgo + 'm ago]\n' + lastT.slice(-2000));
             transcriptRef.current = lastT;
-            sessionContext = `\n\nSESSION RESUME CONTEXT:
-The session was interrupted ${minutesAgo} minutes ago. The user was on page: ${lastPage || 'unknown'}.
-Last conversation:\n"""\n${snippet}\n"""
-INSTRUCTIONS: Do NOT start fresh. Do NOT introduce yourself again. Do NOT ask what they want to study.
-Immediately pick up exactly where you left off — acknowledge the interruption briefly (e.g. "We got cut off — let me pick up where we were.") and continue teaching the same topic/section.`;
+            sessionContext = `\n\nSESSION RESUME:
+Interrupted ${minutesAgo} minutes ago on page: ${lastPage || 'unknown'}.
+The EXACT last lines of conversation were:
+"""
+${lastLines}
+"""
+RULES:
+- Do NOT re-introduce yourself.
+- Do NOT say "last time we discussed X" unless X is literally in the lines above.
+- Do NOT hallucinate or guess topics — only reference what is explicitly in the transcript above.
+- Say exactly one sentence like "We got cut off — picking up where we left off." then continue from the last mentor line above.`;
           }
         }
       } catch (e) {
@@ -223,7 +233,7 @@ Immediately pick up exactly where you left off — acknowledge the interruption 
           tools: [{ functionDeclarations: [declarationReadPage, declarationFetchPage] }],
           inputAudioTranscription: {},
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } },
           },
         },
         callbacks: {
@@ -252,17 +262,13 @@ Immediately pick up exactly where you left off — acknowledge the interruption 
                 playPCMMessage(part.inlineData.data);
               }
               if (part.text) {
-                setTranscript(prev => {
-                  const updated = prev + " " + part.text;
-                  if (onTranscriptUpdate) onTranscriptUpdate(updated);
-                  return updated;
-                });
+                appendTranscript(prev => prev + " " + part.text);
               }
             }
 
             const userText = message.serverContent?.inputAudioTranscription?.text;
             if (userText) {
-              setTranscript(prev => prev + "\nYou: " + userText);
+              appendTranscript(prev => prev + "\nYou: " + userText);
             }
           },
           onerror: (err: any) => {
