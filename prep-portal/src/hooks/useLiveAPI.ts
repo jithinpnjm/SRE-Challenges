@@ -3,6 +3,7 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { signInAnonymously } from 'firebase/auth';
 
 const LIVE_MODEL = "gemini-3.1-flash-live-preview";
 const INPUT_SAMPLE_RATE = 16000;
@@ -183,6 +184,11 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         throw new Error("Gemini API Key missing. Add GEMINI_API_KEY to prep-portal/.env.local and restart npm start.");
       }
 
+      // Ensure authenticated (anonymous if not signed in) so Firestore rules pass
+      if (!auth.currentUser) {
+        try { await signInAnonymously(auth); } catch (e) { console.warn("Anon auth failed:", e); }
+      }
+
       // Load last session transcript from Firestore for continuity
       let sessionContext = '';
       try {
@@ -210,7 +216,7 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
           tools: [{ functionDeclarations: [declarationReadPage, declarationFetchPage] }],
           inputAudioTranscription: {},
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } },
           },
         },
         callbacks: {
