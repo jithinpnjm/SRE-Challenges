@@ -4,7 +4,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
-const LIVE_MODEL = "gemini-2.5-flash-preview-native-audio-dialog";
+const LIVE_MODEL = "gemini-2.0-flash-exp";
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 const BUFFER_SIZE = 4096;
@@ -69,9 +69,10 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
   }, []);
 
   const stop = useCallback(() => {
-    if (sessionRef.current) {
-      try { sessionRef.current.close(); } catch(e) {}
-      sessionRef.current = null;
+    const session = sessionRef.current;
+    sessionRef.current = null;
+    if (session) {
+      try { session.close(); } catch(e) {}
     }
     if (processorRef.current) {
       processorRef.current.disconnect();
@@ -231,11 +232,14 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
               setTranscript(prev => prev + "\nYou: " + userText);
             }
           },
-          onerror: (err) => {
+          onerror: (err: any) => {
             console.error("AI Error:", err);
-            setError("Connection error. Check your mic and API key.");
+            setError(String(err?.message || err || "Connection error."));
           },
-          onclose: () => {
+          onclose: (event: any) => {
+            const reason = event?.reason || event?.message || JSON.stringify(event) || "closed";
+            console.error("[SREMentor] WebSocket closed:", reason, "code:", event?.code);
+            if (reason && reason !== 'closed') setError(`Closed: ${reason}`);
             stop();
           }
         }
