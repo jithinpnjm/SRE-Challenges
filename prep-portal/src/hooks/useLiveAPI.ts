@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
 
 const LIVE_MODEL = "gemini-2.5-flash-native-audio-latest";
 const INPUT_SAMPLE_RATE = 16000;
@@ -171,10 +171,26 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         ''
       );
 
-      console.log("[SREMentor] API key present:", !!apiKey, "| Model:", LIVE_MODEL);
-
       if (!apiKey) {
         throw new Error("Gemini API Key missing. Add GEMINI_API_KEY to prep-portal/.env.local and restart npm start.");
+      }
+
+      // Load last session transcript from Firestore for continuity
+      let sessionContext = '';
+      try {
+        const q = query(collection(db, 'sessions'), orderBy('createdAt', 'desc'), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const last = snap.docs[0].data();
+          const transcript = last.transcript as string;
+          if (transcript && transcript.length > 50) {
+                const snippet = transcript.slice(-2000); // last ~2000 chars
+            setTranscript('[Previous session restored]\n' + transcript.slice(-1000));
+            sessionContext = `\n\nPREVIOUS SESSION CONTEXT:\nThe user's last session ended with this conversation:\n"""\n${snippet}\n"""\nAt the start, briefly acknowledge what was covered and ask if they want to continue from where they left off or start something new. Do not repeat content already covered.`;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load previous session:", e);
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -182,7 +198,7 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         model: LIVE_MODEL,
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction,
+          systemInstruction: systemInstruction + sessionContext,
           tools: [{ functionDeclarations: [declarationNavigate, declarationReadPage] }],
           inputAudioTranscription: {},
           speechConfig: {
