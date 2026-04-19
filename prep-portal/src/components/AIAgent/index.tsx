@@ -41,11 +41,16 @@ export const AIAgent: React.FC = () => {
     else start(SYSTEM_INSTRUCTION);
   };
 
+  const closePanel = () => {
+    if (active) stop();
+    setIsOpen(false);
+  };
+
   return (
     <>
       <button
         className="ai-agent-fab"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => isOpen ? closePanel() : setIsOpen(true)}
         aria-label="Open AI Mentor"
       >
         {isOpen ? <X size={24} /> : <MessageCircle size={30} />}
