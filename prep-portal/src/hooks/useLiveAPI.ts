@@ -162,10 +162,14 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       setIsConnecting(true);
       nextStartTimeRef.current = 0;
 
-      const apiKey = (process.env.GEMINI_API_KEY || siteConfig.customFields?.geminiApiKey) as string;
+      const apiKey = (
+        (siteConfig.customFields?.geminiApiKey as string) ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem('GEMINI_API_KEY')) ||
+        ''
+      );
 
-      if (!apiKey || apiKey === "$GEMINI_API_KEY" || apiKey === "undefined") {
-        throw new Error("Gemini API Key is missing. Add GEMINI_API_KEY to your environment.");
+      if (!apiKey) {
+        throw new Error("Gemini API Key is missing. Set GEMINI_API_KEY in your env and restart the dev server.");
       }
 
       const ai = new GoogleGenAI({ apiKey });

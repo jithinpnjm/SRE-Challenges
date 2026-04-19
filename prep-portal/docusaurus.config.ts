@@ -5,6 +5,9 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
+  customFields: {
+    geminiApiKey: process.env.GEMINI_API_KEY || '',
+  },
   title: 'SRE Challenges Portal',
   tagline: 'Interview prep, MLOps study, and AIOps project navigation in one local portal',
   favicon: 'img/favicon.ico',
