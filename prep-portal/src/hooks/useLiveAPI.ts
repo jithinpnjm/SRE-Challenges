@@ -134,7 +134,9 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       let responseData: any = { error: "Unknown tool" };
 
       if (fc.name === "navigate_to") {
-        window.location.href = fc.args.path;
+        // Use pushState to avoid full page reload (which kills the WebSocket session)
+        window.history.pushState({}, '', fc.args.path);
+        window.dispatchEvent(new PopStateEvent('popstate'));
         responseData = { success: true, navigatedTo: fc.args.path };
       } else if (fc.name === "read_current_page") {
         const content = document.querySelector('main')?.innerText || "No content found on current page.";
