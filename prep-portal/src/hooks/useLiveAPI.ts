@@ -9,22 +9,22 @@ const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 const BUFFER_SIZE = 4096;
 
-const declarationNavigate = {
-  name: "navigate_to",
-  description: "Navigate the user to a specific path in the documentation.",
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      path: { type: Type.STRING, description: "The relative path to navigate to, e.g. '/docs/foundations/README'" }
-    },
-    required: ["path"]
-  }
-};
-
 const declarationReadPage = {
   name: "read_current_page",
   description: "Reads the text content of the page the user is currently viewing.",
   parameters: { type: Type.OBJECT, properties: {} }
+};
+
+const declarationFetchPage = {
+  name: "fetch_page",
+  description: "Fetch and read any documentation page by path without navigating away. Use this when the user asks to load or study a specific guide.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      path: { type: Type.STRING, description: "The doc path, e.g. '/docs/foundations/05-linux-debug-playbook'" }
+    },
+    required: ["path"]
+  }
 };
 
 export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
@@ -133,14 +133,22 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
     for (const fc of toolCall.functionCalls) {
       let responseData: any = { error: "Unknown tool" };
 
-      if (fc.name === "navigate_to") {
-        // Use pushState to avoid full page reload (which kills the WebSocket session)
-        window.history.pushState({}, '', fc.args.path);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-        responseData = { success: true, navigatedTo: fc.args.path };
-      } else if (fc.name === "read_current_page") {
+      if (fc.name === "read_current_page") {
         const content = document.querySelector('main')?.innerText || "No content found on current page.";
-        responseData = { content: content.slice(0, 5000) };
+        responseData = { content: content.slice(0, 6000) };
+      } else if (fc.name === "fetch_page") {
+        try {
+          const resp = await fetch(fc.args.path);
+          const html = await resp.text();
+          const parser = new DOMParser();
+          const parsed = parser.parseFromString(html, 'text/html');
+          const content = parsed.querySelector('article')?.innerText
+            || parsed.querySelector('main')?.innerText
+            || 'No content found.';
+          responseData = { path: fc.args.path, content: content.slice(0, 6000) };
+        } catch (e) {
+          responseData = { error: `Failed to fetch ${fc.args.path}` };
+        }
       }
 
       results.push({
@@ -199,7 +207,7 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: systemInstruction + sessionContext,
-          tools: [{ functionDeclarations: [declarationNavigate, declarationReadPage] }],
+          tools: [{ functionDeclarations: [declarationReadPage, declarationFetchPage] }],
           inputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } },
