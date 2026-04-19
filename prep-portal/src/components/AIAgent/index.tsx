@@ -54,15 +54,21 @@ export const AIAgent: React.FC = () => {
 
           <div className="ai-agent-content">
             {error && (
-              <div style={{ color: '#ff4444', fontSize: '11px', marginBottom: '10px', padding: '10px', background: 'rgba(255,0,0,0.05)', borderRadius: '8px' }}>
-                {error}
+              <div style={{ color: '#fff', fontSize: '12px', marginBottom: '10px', padding: '12px', background: '#cc0000', borderRadius: '8px', fontWeight: 'bold' }}>
+                ⚠ {error}
               </div>
             )}
 
-            {!active && !isConnecting && (
+            {isConnecting && (
+              <div style={{ textAlign: 'center', opacity: 0.7, marginTop: '20px' }}>
+                <p style={{ fontSize: '12px' }}>Connecting to Gemini...</p>
+              </div>
+            )}
+
+            {!active && !isConnecting && !error && (
               <div style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>
                 <Volume2 size={32} style={{ marginBottom: '10px' }} />
-                <p style={{ fontSize: '12px' }}>Initialize neural bridge to begin mentorship.</p>
+                <p style={{ fontSize: '12px' }}>Click the mic button below to start.</p>
               </div>
             )}
 

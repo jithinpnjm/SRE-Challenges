@@ -4,7 +4,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
-const LIVE_MODEL = "gemini-2.0-flash-exp";
+const LIVE_MODEL = "gemini-2.5-flash-preview-native-audio-dialog";
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
 const BUFFER_SIZE = 4096;
@@ -168,8 +168,10 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         ''
       );
 
+      console.log("[SREMentor] API key present:", !!apiKey, "| Model:", LIVE_MODEL);
+
       if (!apiKey) {
-        throw new Error("Gemini API Key is missing. Set GEMINI_API_KEY in your env and restart the dev server.");
+        throw new Error("Gemini API Key missing. Add GEMINI_API_KEY to prep-portal/.env.local and restart npm start.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
