@@ -1,9 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import { db, auth } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
+
+const SESSION_KEY = 'sre-mentor-last-session';
 
 const LIVE_MODEL = "gemini-3.1-flash-live-preview";
 const INPUT_SAMPLE_RATE = 16000;
@@ -42,20 +41,11 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
   const nextStartTimeRef = useRef<number>(0);
-  const sessionIdRef = useRef<string | null>(null);
-
+  // Save transcript to localStorage every 5s while active
   useEffect(() => {
-    if (active && transcript && sessionIdRef.current) {
-      const timer = setTimeout(async () => {
-        try {
-          const sessionDoc = doc(db, 'sessions', sessionIdRef.current!);
-          await updateDoc(sessionDoc, {
-            transcript,
-            updatedAt: serverTimestamp()
-          });
-        } catch (e) {
-          console.error("Failed to sync session:", e);
-        }
+    if (active && transcript) {
+      const timer = setTimeout(() => {
+        localStorage.setItem(SESSION_KEY, transcript);
       }, 5000);
       return () => clearTimeout(timer);
     }
@@ -88,9 +78,12 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       audioContextRef.current = null;
     }
     stopAllAudio();
+    setTranscript(prev => {
+      if (prev) localStorage.setItem(SESSION_KEY, prev);
+      return prev;
+    });
     setActive(false);
     setIsConnecting(false);
-    sessionIdRef.current = null;
   }, [stopAllAudio]);
 
   const playPCMMessage = useCallback(async (base64: string) => {
@@ -184,27 +177,13 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
         throw new Error("Gemini API Key missing. Add GEMINI_API_KEY to prep-portal/.env.local and restart npm start.");
       }
 
-      // Ensure authenticated (anonymous if not signed in) so Firestore rules pass
-      if (!auth.currentUser) {
-        try { await signInAnonymously(auth); } catch (e) { console.warn("Anon auth failed:", e); }
-      }
-
-      // Load last session transcript from Firestore for continuity
+      // Load last session from localStorage
       let sessionContext = '';
-      try {
-        const q = query(collection(db, 'sessions'), orderBy('createdAt', 'desc'), limit(1));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const last = snap.docs[0].data();
-          const transcript = last.transcript as string;
-          if (transcript && transcript.length > 50) {
-                const snippet = transcript.slice(-2000); // last ~2000 chars
-            setTranscript('[Previous session restored]\n' + transcript.slice(-1000));
-            sessionContext = `\n\nPREVIOUS SESSION CONTEXT:\nThe user's last session ended with this conversation:\n"""\n${snippet}\n"""\nAt the start, briefly acknowledge what was covered and ask if they want to continue from where they left off or start something new. Do not repeat content already covered.`;
-          }
-        }
-      } catch (e) {
-        console.warn("Could not load previous session:", e);
+      const lastTranscript = localStorage.getItem(SESSION_KEY);
+      if (lastTranscript && lastTranscript.length > 50) {
+        const snippet = lastTranscript.slice(-2000);
+        setTranscript('[Previous session restored]\n' + lastTranscript.slice(-1000));
+        sessionContext = `\n\nPREVIOUS SESSION CONTEXT:\n"""\n${snippet}\n"""\nBriefly acknowledge what was covered last time and ask if they want to continue or start something new.`;
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -220,21 +199,9 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
           },
         },
         callbacks: {
-          onopen: async () => {
+          onopen: () => {
             setActive(true);
             setIsConnecting(false);
-
-            try {
-              const docRef = await addDoc(collection(db, 'sessions'), {
-                userId: auth.currentUser?.uid || 'anonymous',
-                repoName: 'SRE-Challenges',
-                transcript: '',
-                createdAt: serverTimestamp()
-              });
-              sessionIdRef.current = docRef.id;
-            } catch (e) {
-              console.warn("Session logging disabled:", e);
-            }
           },
           onmessage: async (message: any) => {
             if (message.serverContent?.interrupted) {
