@@ -7,7 +7,22 @@ const SESSION_KEY = 'sre-mentor-last-session';
 const LIVE_MODEL = "gemini-3.1-flash-live-preview";
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
-const BUFFER_SIZE = 4096;
+
+const PAGES: Record<string, string> = {
+  'networking fundamentals': '/docs/foundations/01-networking-fundamentals',
+  'linux kubernetes foundations': '/docs/foundations/02-linux-kubernetes-foundations',
+  'bash scripting': '/docs/foundations/03-bash-and-shell-scripting',
+  'python sre': '/docs/foundations/04-python-for-sre',
+  'linux debug playbook': '/docs/foundations/05-linux-debug-playbook',
+  'kubernetes networking': '/docs/foundations/06-kubernetes-networking-deep-dive',
+  'system design': '/docs/foundations/07-system-design-cloud-architecture',
+  'cicd security': '/docs/foundations/08-cicd-trusted-delivery-and-platform-security',
+  'observability slos': '/docs/foundations/09-observability-slos-and-incident-response',
+  'linux network administration': '/docs/foundations/10-linux-and-network-administration',
+  'cloud networking': '/docs/foundations/11-cloud-networking-and-kubernetes-networking',
+  'gpu kubernetes': '/docs/foundations/12-kubernetes-gpu-ai-platforms-and-operators',
+  'prometheus grafana': '/docs/foundations/19-prometheus-grafana-and-alertmanager',
+};
 
 const declarationReadPage = {
   name: "read_current_page",
@@ -17,7 +32,7 @@ const declarationReadPage = {
 
 const declarationFetchPage = {
   name: "fetch_page",
-  description: "Fetch and read any documentation page by path without navigating away. Use this when the user asks to load or study a specific guide.",
+  description: "Fetch and read any documentation page by path. Use when the user asks to load, find, or study a guide.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -25,6 +40,12 @@ const declarationFetchPage = {
     },
     required: ["path"]
   }
+};
+
+const declarationListPages = {
+  name: "list_pages",
+  description: "Returns all available documentation pages. Use when the user asks what docs are available or can't remember a page name.",
+  parameters: { type: Type.OBJECT, properties: {} }
 };
 
 export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
@@ -67,7 +88,7 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       try { session.close(); } catch(e) {}
     }
     if (processorRef.current) {
-      processorRef.current.disconnect();
+      try { processorRef.current.disconnect(); } catch(e) {}
       processorRef.current = null;
     }
     if (mediaStreamRef.current) {
@@ -148,6 +169,8 @@ export function useLiveAPI(onTranscriptUpdate?: (text: string) => void) {
       if (fc.name === "read_current_page") {
         const content = document.querySelector('main')?.innerText || "No content found on current page.";
         responseData = { content: content.slice(0, 6000) };
+      } else if (fc.name === "list_pages") {
+        responseData = { pages: PAGES };
       } else if (fc.name === "fetch_page") {
         try {
           const resp = await fetch(fc.args.path);
@@ -230,7 +253,7 @@ RULES:
         config: {
           responseModalities: [Modality.AUDIO],
           systemInstruction: systemInstruction + sessionContext,
-          tools: [{ functionDeclarations: [declarationReadPage, declarationFetchPage] }],
+          tools: [{ functionDeclarations: [declarationReadPage, declarationFetchPage, declarationListPages] }],
           inputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } },
@@ -298,12 +321,13 @@ RULES:
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextRef.current = audioContext;
 
+      await audioContext.audioWorklet.addModule('/pcm-processor.js');
       const source = audioContext.createMediaStreamSource(mediaStream);
-      const processor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-      processorRef.current = processor;
+      const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+      processorRef.current = workletNode as any;
 
-      processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
+      workletNode.port.onmessage = (e) => {
+        const inputData: Float32Array = e.data;
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) sum += Math.abs(inputData[i]);
         setVolume(sum / inputData.length);
@@ -319,8 +343,8 @@ RULES:
         });
       };
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      source.connect(workletNode);
+      workletNode.connect(audioContext.destination);
 
     } catch (err: any) {
       console.error("Failed to start Live API:", err);
