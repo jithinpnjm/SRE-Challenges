@@ -321,13 +321,13 @@ RULES:
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
       audioContextRef.current = audioContext;
 
-      await audioContext.audioWorklet.addModule('/pcm-processor.js');
       const source = audioContext.createMediaStreamSource(mediaStream);
-      const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
-      processorRef.current = workletNode as any;
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor as any;
 
-      workletNode.port.onmessage = (e) => {
-        const inputData: Float32Array = e.data;
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) sum += Math.abs(inputData[i]);
         setVolume(sum / inputData.length);
@@ -337,7 +337,6 @@ RULES:
           pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 32767;
         }
 
-        // Safe base64 — btoa(String.fromCharCode(...)) crashes on large buffers
         const bytes = new Uint8Array(pcmData.buffer);
         let binary = '';
         for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
@@ -346,8 +345,8 @@ RULES:
         });
       };
 
-      source.connect(workletNode);
-      workletNode.connect(audioContext.destination);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
 
     } catch (err: any) {
       console.error("Failed to start Live API:", err);
