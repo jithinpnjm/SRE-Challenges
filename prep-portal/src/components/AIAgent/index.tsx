@@ -60,7 +60,14 @@ When Jithin answers a question:
 
 export const AIAgent: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const { active, isConnecting, error, transcript, volume, start, stop } = useLiveAPI();
+  const transcriptRef = React.useRef<HTMLDivElement>(null);
+  const { active, isConnecting, error, transcript, volume, status, start, stop } = useLiveAPI();
+
+  React.useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [transcript]);
 
   const toggleVoice = () => {
     if (active) stop();
@@ -89,8 +96,10 @@ export const AIAgent: React.FC = () => {
               <Terminal size={18} />
               <span style={{ fontSize: '12px', fontWeight: 'bold' }}>SRE.Mentor_v2</span>
             </div>
-            <div className="ai-status-badge">
-              {active ? 'SYNCING' : isConnecting ? 'CONNECTING' : 'IDLE'}
+            <div className="ai-status-badge" style={{
+              background: status === 'LISTENING' ? 'rgba(0,255,0,0.3)' : status === 'THINKING' ? 'rgba(255,200,0,0.3)' : 'rgba(255,255,255,0.2)'
+            }}>
+              {status}
             </div>
           </div>
 
@@ -114,7 +123,7 @@ export const AIAgent: React.FC = () => {
               </div>
             )}
 
-            <div className="ai-transcript">
+            <div className="ai-transcript" ref={transcriptRef} style={{ maxHeight: '280px', overflowY: 'auto' }}>
               {transcript.split('\n').map((line, i) => (
                 <div key={i} style={{ marginBottom: '8px' }}>
                   {line.startsWith('You:') ? (

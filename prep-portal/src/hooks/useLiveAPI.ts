@@ -258,13 +258,6 @@ RULES:
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } },
           },
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              disabled: false,
-              prefixPaddingMs: 100,
-              silenceDurationMs: 400,
-            },
-          },
         },
         callbacks: {
           onopen: () => {
@@ -344,9 +337,12 @@ RULES:
           pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 32767;
         }
 
-        const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+        // Safe base64 — btoa(String.fromCharCode(...)) crashes on large buffers
+        const bytes = new Uint8Array(pcmData.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         session.sendRealtimeInput({
-          audio: { data: base64Data, mimeType: "audio/pcm;rate=16000" }
+          audio: { data: btoa(binary), mimeType: "audio/pcm;rate=16000" }
         });
       };
 
@@ -361,5 +357,6 @@ RULES:
     }
   }, [playPCMMessage, stopAllAudio, stop, onTranscriptUpdate, handleToolCall, siteConfig]);
 
-  return { active, isConnecting, error, transcript, volume, start, stop };
+  const status = isConnecting ? 'CONNECTING' : !active ? 'IDLE' : volume > 0.01 ? 'LISTENING' : 'THINKING';
+  return { active, isConnecting, error, transcript, volume, status, start, stop };
 }
