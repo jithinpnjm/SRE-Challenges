@@ -258,6 +258,13 @@ RULES:
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } },
           },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              prefixPaddingMs: 100,
+              silenceDurationMs: 400,
+            },
+          },
         },
         callbacks: {
           onopen: () => {
