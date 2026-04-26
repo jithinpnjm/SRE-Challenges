@@ -9,27 +9,18 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') });
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  customFields: {
-    geminiApiKey: process.env.GEMINI_API_KEY || '',
-  },
-  title: 'SRE Challenges Portal',
-  tagline: 'Interview prep, MLOps study, and AIOps project navigation in one local portal',
+  title: 'SRE Study Guide',
+  tagline: 'A canonical SRE and platform engineering learning system from basics to advanced practice',
   favicon: 'img/favicon.ico',
 
-  // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
-    v4: true, // Improve compatibility with the upcoming Docusaurus v4
+    v4: true,
   },
 
-  // Set the production url of your site here
   url: 'http://localhost',
-  // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
 
-  // GitHub pages deployment config.
-  // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'jithinpjoseph',
+  organizationName: 'jithinpnjm',
   projectName: 'SRE-Challenges',
 
   onBrokenLinks: 'warn',
@@ -39,9 +30,6 @@ const config: Config = {
     },
   },
 
-  // Even if you don't use internationalization, you can use this field to set
-  // useful metadata like html lang. For example, if your site is Chinese, you
-  // may want to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
@@ -99,30 +87,32 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'SRE Challenges',
+      title: 'SRE Study Guide',
       logo: {
-        alt: 'SRE Prep Portal Logo',
+        alt: 'SRE Study Guide Logo',
         src: 'img/logo.svg',
       },
       items: [
+        {to: '/docs/learning-path', label: 'Roadmap', position: 'left'},
         {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: 'Interview Prep',
+          label: 'Foundations',
         },
-        {to: '/today', label: 'Today', position: 'left'},
+        {to: '/today', label: 'Study Sessions', position: 'left'},
+        {to: '/workspace', label: 'Practice Workspace', position: 'left'},
         {
-          label: 'Projects',
+          label: 'Supplemental',
           position: 'left',
           items: [
-            {to: '/library', label: 'Document Library'},
+            {to: '/library', label: 'Supplemental Archive'},
+            {to: '/docs/nebius/README', label: 'Nebius Sprint'},
             {to: '/mlops', label: 'MLOps Hub'},
             {to: '/mlops-docs/overview', label: 'MLOps Docs'},
             {to: '/aiops', label: 'AIOps Hub'},
@@ -130,10 +120,8 @@ const config: Config = {
           ],
         },
         {type: 'search', position: 'right'},
-        {to: '/workspace', label: 'Answer Workspace', position: 'left'},
-        {to: '/docs/learning-path', label: 'Learning Path', position: 'left'},
         {
-          href: 'https://github.com/jithinpjoseph/SRE-Challenges',
+          href: 'https://github.com/jithinpnjm/SRE-Challenges',
           label: 'GitHub',
           position: 'right',
         },
@@ -143,40 +131,19 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Interview Prep',
+          title: 'Core Path',
           items: [
             {
-              label: 'Learning Path',
+              label: 'Canonical Roadmap',
               to: '/docs/learning-path',
             },
             {
-              label: 'Hands-On Labs',
-              to: '/docs/hands-on-labs',
-            },
-          ],
-        },
-        {
-          title: 'Library',
-          items: [
-            {
-              label: 'Document Library',
-              to: '/library',
+              label: 'Foundations',
+              to: '/docs/foundations/linux-and-network-administration',
             },
             {
-              label: 'MLOps Hub',
-              to: '/mlops',
-            },
-            {
-              label: 'MLOps Docs',
-              to: '/mlops-docs/overview',
-            },
-            {
-              label: 'AIOps Hub',
-              to: '/aiops',
-            },
-            {
-              label: 'AIOps Docs',
-              to: '/aiops-docs/overview',
+              label: 'Study Sessions',
+              to: '/today',
             },
           ],
         },
@@ -184,16 +151,37 @@ const config: Config = {
           title: 'Practice',
           items: [
             {
-              label: 'Answer Workspace',
+              label: 'Practice Workspace',
               to: '/workspace',
             },
             {
-              label: 'Cloud Design Labs',
-              to: '/docs/hands-on-labs/cloud-design',
+              label: 'Hands-On Labs',
+              to: '/docs/hands-on-labs',
             },
             {
-              label: 'Kubernetes Labs',
-              to: '/docs/hands-on-labs/kubernetes',
+              label: 'Mock Interviews',
+              to: '/docs/mock-interviews/01-nebius-linux-kubernetes-troubleshooting',
+            },
+          ],
+        },
+        {
+          title: 'Supplemental',
+          items: [
+            {
+              label: 'Supplemental Archive',
+              to: '/library',
+            },
+            {
+              label: 'Nebius Sprint',
+              to: '/docs/nebius/README',
+            },
+            {
+              label: 'MLOps Hub',
+              to: '/mlops',
+            },
+            {
+              label: 'AIOps Hub',
+              to: '/aiops',
             },
           ],
         },
@@ -206,12 +194,12 @@ const config: Config = {
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/jithinpjoseph/SRE-Challenges',
+              href: 'https://github.com/jithinpnjm/SRE-Challenges',
             },
           ],
         },
       ],
-      copyright: `Built locally for interview practice with Docusaurus.`,
+      copyright: `Built locally for SRE learning and platform engineering practice with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
