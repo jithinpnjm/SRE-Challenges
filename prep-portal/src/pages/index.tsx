@@ -7,29 +7,65 @@ import AnswerCallout from '@site/src/components/AnswerCallout';
 
 import styles from './index.module.css';
 
+const phases = [
+  {
+    title: '1. Linux, networking, and host fundamentals',
+    description:
+      'Build the base layer: processes, memory, filesystems, DNS, TCP, TLS, HTTP, routing, firewalls, and host triage.',
+    to: '/docs/learning-path#phase-1-linux-networking-and-host-fundamentals',
+  },
+  {
+    title: '2. Kubernetes and containers',
+    description:
+      'Understand pods, services, ingress, CNI, kubelet, containerd, manifests, operators, and GPU platform patterns.',
+    to: '/docs/learning-path#phase-2-kubernetes-and-containers',
+  },
+  {
+    title: '3. Observability and incidents',
+    description:
+      'Learn SLOs, Prometheus, Grafana, Alertmanager, incident command, troubleshooting loops, and post-incident learning.',
+    to: '/docs/learning-path#phase-3-observability-slos-and-incident-response',
+  },
+  {
+    title: '4. Cloud, architecture, and delivery',
+    description:
+      'Connect VPCs, compute, storage, Terraform, CI/CD, GitOps, security gates, rollout safety, and system design.',
+    to: '/docs/learning-path#phase-4-cloud-architecture-infrastructure-and-delivery',
+  },
+  {
+    title: '5. Automation and platform services',
+    description:
+      'Use Bash, Python, Ansible, Kafka, SQL, HTTP, proxies, and quality gates as operational building blocks.',
+    to: '/docs/learning-path#phase-5-automation-data-and-platform-services',
+  },
+  {
+    title: '6. Synthesis and staff-level reasoning',
+    description:
+      'Combine all layers into end-to-end production designs with tradeoffs, failure modes, operations, and leadership depth.',
+    to: '/docs/learning-path#phase-6-synthesis-capstone-and-staff-level-reasoning',
+  },
+];
+
 function HomepageHeader() {
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
         <Heading as="h1" className="hero__title">
-          SRE &amp; Platform Engineer Study Hub
+          SRE Study Guide
         </Heading>
         <p className="hero__subtitle">
-          A complete study library — Linux to Kubernetes, networking to GPU infrastructure,
-          observability to system design. Beginner to expert in every topic.
+          One canonical learning path for SRE and platform engineering: from Linux and networking basics to Kubernetes,
+          observability, cloud architecture, delivery systems, automation, and staff-level design.
         </p>
         <div className={styles.buttons}>
-          <Link className="button button--secondary button--lg" to="/docs/nebius/README">
-            Nebius Sprint
+          <Link className="button button--secondary button--lg" to="/docs/learning-path">
+            Start With The Roadmap
           </Link>
           <Link className="button button--primary button--lg" to="/docs/foundations/linux-and-network-administration">
-            Start Studying
+            Begin Foundations
           </Link>
-          <Link className="button button--outline button--lg margin-left--sm" to="/mlops">
-            MLOps
-          </Link>
-          <Link className="button button--outline button--lg margin-left--sm" to="/aiops">
-            AIOps
+          <Link className="button button--outline button--lg margin-left--sm" to="/workspace">
+            Practice Workspace
           </Link>
         </div>
       </div>
@@ -40,185 +76,108 @@ function HomepageHeader() {
 export default function Home(): ReactNode {
   return (
     <Layout
-      title="SRE Study Hub"
-      description="Complete SRE and platform engineering study library. Linux, networking, Kubernetes, GPU infrastructure, observability, system design, CI/CD, and more — beginner to expert.">
+      title="SRE Study Guide"
+      description="A canonical SRE and platform engineering learning system from basics to advanced practice.">
       <HomepageHeader />
       <main>
         <section className="container margin-top--lg margin-bottom--xl">
-
-          {/* Nebius Sprint Banner */}
-          <div className="card padding--lg margin-bottom--lg" style={{borderLeft: '4px solid #e8462a', background: 'var(--ifm-background-surface-color)'}}>
-            <div className="row">
-              <div className="col col--8">
-                <Heading as="h2" style={{marginBottom: '0.5rem'}}>
-                  🎯 Nebius Interview Sprint — 10 Days
-                </Heading>
-                <p style={{marginBottom: '1rem'}}>
-                  Focused sprint for a Staff SRE interview at Nebius AI. Covers their exact 4-stage
-                  interview format: Linux internals, Kubernetes + Cilium, GPU/AI infrastructure,
-                  system design, coding, and stress interview simulation.
-                </p>
-                <div className={styles.buttons}>
-                  <Link className="button button--primary button--lg" to="/docs/nebius/README">
-                    Start Sprint
-                  </Link>
-                  <Link className="button button--secondary button--lg" to="/docs/nebius/company-stack-interview-guide">
-                    About Nebius
-                  </Link>
-                </div>
-              </div>
-              <div className="col col--4">
-                <div style={{fontSize: '0.9rem', lineHeight: '1.8'}}>
-                  <strong>Day 1–3:</strong> Linux internals (cgroups, namespaces, eBPF)<br/>
-                  <strong>Day 4–5:</strong> Kubernetes + Cilium + GPU scheduling<br/>
-                  <strong>Day 6:</strong> GPU/AI infra (InfiniBand, DCGM, vLLM)<br/>
-                  <strong>Day 7:</strong> System design (GPU cluster, inference platform)<br/>
-                  <strong>Day 8:</strong> Coding + algorithms<br/>
-                  <strong>Day 9:</strong> Stress interview simulation<br/>
-                  <strong>Day 10:</strong> Full mock + review
-                </div>
-              </div>
+          <div className="portal-banner margin-bottom--lg">
+            <Heading as="h2">Use This Site As One Learning System</Heading>
+            <p>
+              The main path is now simple: follow the roadmap, read the foundation guide for the current phase,
+              complete a lab or drill, then explain the topic in the practice workspace. Nebius, MLOps, AIOps,
+              and the archive are useful supplements, but they should not compete with the core roadmap.
+            </p>
+            <div className="button-group">
+              <Link className="button button--primary button--lg" to="/docs/learning-path">
+                Open Canonical Roadmap
+              </Link>
+              <Link className="button button--secondary button--lg" to="/today">
+                Open Study Sessions
+              </Link>
             </div>
           </div>
 
-          {/* Study Tracks */}
-          <div className="row margin-bottom--lg">
-            <div className="col col--4">
-              <div className="card padding--lg portal-card portal-card--prep">
-                <Heading as="h2">Study Library</Heading>
-                <p>Comprehensive guides across all SRE and platform engineering topics — from first principles to production depth.</p>
-                <Link to="/docs/foundations/linux-and-network-administration">Open Library</Link>
-              </div>
-            </div>
-            <div className="col col--4">
-              <div className="card padding--lg portal-card portal-card--mlops">
-                <Heading as="h2">MLOps</Heading>
-                <p>Python, notebooks, FastAPI, and MLflow study area with runnable commands and project-oriented learning.</p>
-                <Link to="/mlops">Open MLOps</Link>
-              </div>
-            </div>
-            <div className="col col--4">
-              <div className="card padding--lg portal-card portal-card--aiops">
-                <Heading as="h2">AIOps</Heading>
-                <p>Operational design and implementation docs for AI-assisted alert enrichment, routing, and platform workflows.</p>
-                <Link to="/aiops">Open AIOps</Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Study Library Navigation */}
           <section className="margin-top--xl">
-            <Heading as="h2">Study Library — By Topic</Heading>
+            <Heading as="h2">Canonical Roadmap</Heading>
+            <div className="row">
+              {phases.map((phase) => (
+                <div className="col col--4 margin-bottom--lg" key={phase.title}>
+                  <div className="card padding--lg portal-card portal-card--prep">
+                    <Heading as="h3">{phase.title}</Heading>
+                    <p>{phase.description}</p>
+                    <Link to={phase.to}>Study this phase</Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="margin-top--xl">
+            <Heading as="h2">Primary Learning Areas</Heading>
             <div className="row">
               <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Linux &amp; Systems</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/linux-and-network-administration">Linux administration</Link></li>
-                    <li><Link to="/docs/foundations/linux-debug-playbook">Linux debugging playbook</Link></li>
-                    <li><Link to="/docs/foundations/linux-kubernetes-foundations">Linux to Kubernetes</Link></li>
-                    <li><Link to="/docs/foundations/bash-and-shell-scripting">Bash scripting</Link></li>
-                    <li><Link to="/docs/foundations/python-for-sre">Python for SRE</Link></li>
-                  </ul>
+                <div className="card padding--lg portal-card portal-card--prep">
+                  <Heading as="h3">Foundations</Heading>
+                  <p>
+                    The main course material. Start here for broad SRE depth, from beginner-friendly fundamentals
+                    to advanced production reasoning.
+                  </p>
+                  <Link to="/docs/foundations/linux-and-network-administration">Open foundations</Link>
                 </div>
               </div>
               <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Networking</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/networking-fundamentals">Networking fundamentals</Link></li>
-                    <li><Link to="/docs/foundations/cloud-networking-and-kubernetes-networking">Cloud and Kubernetes networking</Link></li>
-                    <li><Link to="/docs/foundations/http-apis-and-reverse-proxy-paths">HTTP, APIs, and reverse proxies</Link></li>
-                    <li><Link to="/docs/foundations/kubernetes-networking-deep-dive">Kubernetes networking deep dive</Link></li>
-                  </ul>
+                <div className="card padding--lg portal-card portal-card--prep">
+                  <Heading as="h3">Practice</Heading>
+                  <p>
+                    Labs, drills, mock interviews, and written answers. Use this layer to convert reading into skill.
+                  </p>
+                  <Link to="/workspace">Open practice workspace</Link>
                 </div>
               </div>
               <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Kubernetes &amp; Containers</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/kubernetes-gpu-ai-platforms-and-operators">GPU and AI platforms</Link></li>
-                    <li><Link to="/docs/foundations/docker-and-container-runtime">Docker and runtimes</Link></li>
-                    <li><Link to="/docs/foundations/yaml-and-kubernetes-manifest-design">YAML and manifests</Link></li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div className="row margin-top--md">
-              <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Observability &amp; Reliability</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/observability-slos-and-incident-response">Observability and SLOs</Link></li>
-                    <li><Link to="/docs/foundations/prometheus-grafana-and-alertmanager">Prometheus, Grafana, Alertmanager</Link></li>
-                    <li><Link to="/docs/foundations/devops-troubleshooting-and-security-errors">Troubleshooting patterns</Link></li>
-                  </ul>
-                </div>
-              </div>
-              <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Cloud &amp; Infrastructure</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/system-design-cloud-architecture">System design</Link></li>
-                    <li><Link to="/docs/foundations/aws-cloud-services-and-platform-design">AWS platform design</Link></li>
-                    <li><Link to="/docs/foundations/terraform-infrastructure-as-code">Terraform and IaC</Link></li>
-                    <li><Link to="/docs/foundations/azure-devops-crossover">Azure DevOps crossover</Link></li>
-                  </ul>
-                </div>
-              </div>
-              <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">CI/CD &amp; Delivery</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/cicd-trusted-delivery-and-platform-security">CI/CD and security</Link></li>
-                    <li><Link to="/docs/foundations/delivery-systems-jenkins-github-actions-and-argocd">Jenkins, GitHub Actions, ArgoCD</Link></li>
-                    <li><Link to="/docs/foundations/git-and-version-control-for-platform-engineers">Git for platform engineers</Link></li>
-                    <li><Link to="/docs/foundations/sonarqube-and-code-quality-gates">SonarQube and quality gates</Link></li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div className="row margin-top--md">
-              <div className="col col--4">
-                <div className="card padding--md">
-                  <Heading as="h3">Platforms &amp; Services</Heading>
-                  <ul>
-                    <li><Link to="/docs/foundations/kafka-and-event-streaming">Kafka and event streaming</Link></li>
-                    <li><Link to="/docs/foundations/ansible-and-host-automation">Ansible and automation</Link></li>
-                    <li><Link to="/docs/foundations/sql-and-relational-data-for-sre">SQL for SRE</Link></li>
-                    <li><Link to="/docs/foundations/end-to-end-project-and-capstone-patterns">End-to-end patterns</Link></li>
-                  </ul>
+                <div className="card padding--lg portal-card portal-card--prep">
+                  <Heading as="h3">Supplemental</Heading>
+                  <p>
+                    Nebius sprint, archive material, MLOps, and AIOps. Use these after the roadmap tells you what to study.
+                  </p>
+                  <Link to="/library">Open supplemental archive</Link>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* Nebius 10-Day Sprint Detail */}
           <section className="margin-top--xl">
-            <Heading as="h2">Nebius 10-Day Sprint Plan</Heading>
+            <Heading as="h2">Study Loop</Heading>
             <div className="row">
-              <div className="col col--6">
-                <ol>
-                  <li><Link to="/docs/nebius/company-stack-interview-guide">Day 1: Nebius — company, stack, interview format</Link></li>
-                  <li><Link to="/docs/nebius/linux-deep-dive">Day 2: Linux internals — processes, namespaces, cgroups</Link></li>
-                  <li><Link to="/docs/nebius/linux-deep-dive">Day 3: Linux debugging — eBPF, perf, QEMU/KVM</Link></li>
-                  <li><Link to="/docs/nebius/kubernetes-cilium-production">Day 4: Kubernetes control plane + Cilium CNI</Link></li>
-                  <li><Link to="/docs/nebius/kubernetes-cilium-production">Day 5: GPU scheduling, operators, Soperator</Link></li>
-                </ol>
+              <div className="col col--3">
+                <div className="card padding--md">
+                  <Heading as="h3">1. Read</Heading>
+                  <p>Use the roadmap to choose exactly one foundation guide.</p>
+                </div>
               </div>
-              <div className="col col--6">
-                <ol start={6}>
-                  <li><Link to="/docs/nebius/gpu-ai-infrastructure">Day 6: GPU/AI infra — InfiniBand, DCGM, vLLM</Link></li>
-                  <li><Link to="/docs/nebius/system-design">Day 7: System design — GPU cluster + inference platform</Link></li>
-                  <li><Link to="/docs/nebius/coding-algorithms">Day 8: Coding — Python SRE scripts + algorithms</Link></li>
-                  <li><Link to="/docs/nebius/stress-interview-incident-response">Day 9: Stress interview simulation</Link></li>
-                  <li><Link to="/docs/nebius/README">Day 10: Full mock + review</Link></li>
-                </ol>
+              <div className="col col--3">
+                <div className="card padding--md">
+                  <Heading as="h3">2. Trace</Heading>
+                  <p>Follow the process, packet, pod, alert, deployment, or state change end to end.</p>
+                </div>
+              </div>
+              <div className="col col--3">
+                <div className="card padding--md">
+                  <Heading as="h3">3. Practice</Heading>
+                  <p>Run commands, inspect output, break something safely, or complete a lab.</p>
+                </div>
+              </div>
+              <div className="col col--3">
+                <div className="card padding--md">
+                  <Heading as="h3">4. Explain</Heading>
+                  <p>Write or speak one answer in the workspace until it is clear and operational.</p>
+                </div>
               </div>
             </div>
             <AnswerCallout
-              challengeLabel="daily answer"
-              prompt="Each day, draft one answer in the workspace and send it to me for review."
+              challengeLabel="daily SRE study loop"
+              prompt="After each session, explain one topic from basics to advanced: mental model, commands, failure modes, and production tradeoffs."
             />
           </section>
         </section>
