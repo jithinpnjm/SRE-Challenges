@@ -1,133 +1,250 @@
-# Learning Path: From Foundations to Staff-Level Fluency
+# Start Here: Canonical SRE Learning Roadmap
 
-This is the recommended reading order for building real senior and staff-level platform engineering depth — not just knowing the answers, but understanding the why and the what-breaks.
+This is the single source of truth for the study site.
 
----
+Use this roadmap as the default path. The goal is not to memorize isolated interview answers. The goal is to build SRE and platform engineering fluency from first principles to production-level reasoning.
 
-## Phase 1: Linux and Networking Core
+The rest of the repo should support this path:
 
-These are the hardest things to fake in a technical conversation. Start here.
-
-1. [foundations/10-linux-and-network-administration.md](foundations/10-linux-and-network-administration.md)
-2. [foundations/01-networking-fundamentals.md](foundations/01-networking-fundamentals.md)
-3. [foundations/02-linux-kubernetes-foundations.md](foundations/02-linux-kubernetes-foundations.md)
-4. [foundations/05-linux-debug-playbook.md](foundations/05-linux-debug-playbook.md)
-
-Goal: become confident with Linux host triage, TCP/IP packet flow, kernel memory and process model, and the link between Linux internals and Kubernetes node behavior.
-
-Hands-on:
-- [hands-on-labs/linux/](hands-on-labs/linux/)
-- [hands-on-labs/linux-admin/](hands-on-labs/linux-admin/)
-- [hands-on-labs/networking/](hands-on-labs/networking/)
+- **Foundations** are the main learning material.
+- **Hands-on labs** turn concepts into muscle memory.
+- **Mock interviews** test whether you can explain and troubleshoot under pressure.
+- **Nebius sprint** is optional and secondary, useful only when preparing for that specific interview.
+- **Document library/archive** is supplemental reinforcement, not a competing roadmap.
 
 ---
 
-## Phase 2: Kubernetes and Containers
+## How To Study Each Phase
 
-1. [foundations/06-kubernetes-networking-deep-dive.md](foundations/06-kubernetes-networking-deep-dive.md)
-2. [foundations/11-cloud-networking-and-kubernetes-networking.md](foundations/11-cloud-networking-and-kubernetes-networking.md)
-3. [foundations/13-docker-and-container-runtime.md](foundations/13-docker-and-container-runtime.md)
-4. [foundations/25-yaml-and-kubernetes-manifest-design.md](foundations/25-yaml-and-kubernetes-manifest-design.md)
-5. [foundations/12-kubernetes-gpu-ai-platforms-and-operators.md](foundations/12-kubernetes-gpu-ai-platforms-and-operators.md)
+For every phase, do the same loop:
 
-Goal: trace a request from DNS through kube-proxy to a pod, understand overlay2 layering and containerd/runc, write production-quality manifests, and understand GPU scheduling and operators.
+1. **Read for the mental model**: understand what the system is doing and why it exists.
+2. **Trace the request or failure path**: follow packets, processes, pods, alerts, deployments, or state changes end to end.
+3. **Do one hands-on drill**: run commands, inspect output, break something, and fix it.
+4. **Explain it out loud**: turn the topic into a clear spoken answer.
+5. **Write one operational note**: capture symptoms, likely causes, commands, and remediation.
 
-Hands-on:
-- [hands-on-labs/kubernetes/](hands-on-labs/kubernetes/)
-- [hands-on-labs/cloud-networking/](hands-on-labs/cloud-networking/)
+Do not try to finish everything quickly. The site is content-rich on purpose. The win is repeated practice through the same canonical path.
 
 ---
 
-## Phase 3: Observability and Reliability
+## Phase 1: Linux, Networking, And Host Fundamentals
 
-1. [foundations/09-observability-slos-and-incident-response.md](foundations/09-observability-slos-and-incident-response.md)
-2. [foundations/19-prometheus-grafana-and-alertmanager.md](foundations/19-prometheus-grafana-and-alertmanager.md)
-3. [foundations/26-devops-troubleshooting-and-security-errors.md](foundations/26-devops-troubleshooting-and-security-errors.md)
+Start here. These topics are the base layer for almost everything else in SRE.
 
-Goal: design SLOs and error budgets from scratch, write PromQL queries and multi-window burn rate alerts, run structured incident triage across Kubernetes, CI/CD, and cloud layers.
+Read in this order:
 
----
+1. [Linux and network administration](foundations/10-linux-and-network-administration.md)
+2. [Networking fundamentals](foundations/01-networking-fundamentals.md)
+3. [Linux and Kubernetes foundations](foundations/02-linux-kubernetes-foundations.md)
+4. [Linux debug playbook](foundations/05-linux-debug-playbook.md)
 
-## Phase 4: Cloud, Infrastructure, and Delivery
+You should be able to answer:
 
-1. [foundations/07-system-design-cloud-architecture.md](foundations/07-system-design-cloud-architecture.md)
-2. [foundations/14-aws-cloud-services-and-platform-design.md](foundations/14-aws-cloud-services-and-platform-design.md)
-3. [foundations/15-terraform-infrastructure-as-code.md](foundations/15-terraform-infrastructure-as-code.md)
-4. [foundations/08-cicd-trusted-delivery-and-platform-security.md](foundations/08-cicd-trusted-delivery-and-platform-security.md)
-5. [foundations/17-delivery-systems-jenkins-github-actions-and-argocd.md](foundations/17-delivery-systems-jenkins-github-actions-and-argocd.md)
-6. [foundations/16-git-and-version-control-for-platform-engineers.md](foundations/16-git-and-version-control-for-platform-engineers.md)
+- What happens when a process starts, opens files, uses memory, and sends traffic?
+- How do DNS, TCP, TLS, HTTP, routing, and firewalls fit together?
+- How do cgroups, namespaces, systemd, journald, iptables/nftables, and kernel limits affect Kubernetes nodes?
+- Which commands do you run first when a Linux host is slow, full, overloaded, or unreachable?
 
-Goal: design multi-AZ VPCs, write Terraform modules with split state, build CI pipelines with image signing and policy gates, and operate GitOps-driven deployments.
+Practice:
 
-Hands-on:
-- [hands-on-labs/cloud-design/](hands-on-labs/cloud-design/)
+- [Linux labs](hands-on-labs/linux/)
+- [Linux admin labs](hands-on-labs/linux-admin/)
+- [Networking labs](hands-on-labs/networking/)
 
----
+Exit criteria:
 
-## Phase 5: Platform Services and Tooling
-
-1. [foundations/18-ansible-and-host-automation.md](foundations/18-ansible-and-host-automation.md)
-2. [foundations/20-kafka-and-event-streaming.md](foundations/20-kafka-and-event-streaming.md)
-3. [foundations/21-sql-and-relational-data-for-sre.md](foundations/21-sql-and-relational-data-for-sre.md)
-4. [foundations/22-http-apis-and-reverse-proxy-paths.md](foundations/22-http-apis-and-reverse-proxy-paths.md)
-5. [foundations/23-azure-devops-crossover.md](foundations/23-azure-devops-crossover.md)
-6. [foundations/24-sonarqube-and-code-quality-gates.md](foundations/24-sonarqube-and-code-quality-gates.md)
-
-Goal: automate host configuration at scale, understand Kafka consumer lag and delivery semantics, write SRE-relevant SQL queries, debug the HTTP request path through NGINX and Envoy, and integrate quality gates.
+- You can troubleshoot CPU, memory, disk, DNS, port, and connectivity problems without guessing.
+- You can explain packet flow from a process on one host to a service on another host.
+- You can read common Linux command output and decide what to check next.
 
 ---
 
-## Phase 6: Scripting and Automation
+## Phase 2: Kubernetes And Containers
 
-1. [foundations/03-bash-and-shell-scripting.md](foundations/03-bash-and-shell-scripting.md)
-2. [foundations/04-python-for-sre.md](foundations/04-python-for-sre.md)
+Move here after Linux and networking. Kubernetes is easier when you understand the host first.
 
-Hands-on:
-- [hands-on-labs/bash/](hands-on-labs/bash/)
-- [hands-on-labs/python/](hands-on-labs/python/)
+Read in this order:
+
+1. [Kubernetes networking deep dive](foundations/06-kubernetes-networking-deep-dive.md)
+2. [Cloud networking and Kubernetes networking](foundations/11-cloud-networking-and-kubernetes-networking.md)
+3. [Docker and container runtime](foundations/13-docker-and-container-runtime.md)
+4. [YAML and Kubernetes manifest design](foundations/25-yaml-and-kubernetes-manifest-design.md)
+5. [Kubernetes GPU, AI platforms, and operators](foundations/12-kubernetes-gpu-ai-platforms-and-operators.md)
+
+You should be able to answer:
+
+- What happens when a request enters a Kubernetes service and reaches a pod?
+- How do kubelet, containerd, runc, CNI, CoreDNS, kube-proxy, ingress, and network policy interact?
+- What makes a manifest production-ready rather than merely valid YAML?
+- How do operators encode operational knowledge into reconciliation loops?
+- How are GPU workloads scheduled, isolated, monitored, and debugged?
+
+Practice:
+
+- [Kubernetes labs](hands-on-labs/kubernetes/)
+- [Cloud networking labs](hands-on-labs/cloud-networking/)
+
+Exit criteria:
+
+- You can debug Pending, CrashLoopBackOff, ImagePullBackOff, DNS, service routing, ingress, and node-pressure failures.
+- You can explain the difference between container image, container runtime, pod sandbox, process isolation, and workload scheduling.
+- You can read a manifest and identify missing resources, probes, labels, security context, rollout strategy, and operational risks.
 
 ---
 
-## Phase 7: Synthesis and Design Depth
+## Phase 3: Observability, SLOs, And Incident Response
 
-1. [foundations/27-end-to-end-project-and-capstone-patterns.md](foundations/27-end-to-end-project-and-capstone-patterns.md)
-2. [foundations/00-senior-staff-operating-manual.md](foundations/00-senior-staff-operating-manual.md)
-3. [hands-on-labs/cloud-design/reference-answer-gcp-public-platform.md](hands-on-labs/cloud-design/reference-answer-gcp-public-platform.md)
-4. [hands-on-labs/kubernetes/reference-answer-gpu-ml-ai-platform.md](hands-on-labs/kubernetes/reference-answer-gpu-ml-ai-platform.md)
+Now learn how to see and control production systems.
 
-Goal: compose all layers into a complete production system design. Use the reference answers to calibrate what staff-level depth looks like.
+Read in this order:
+
+1. [Observability, SLOs, and incident response](foundations/09-observability-slos-and-incident-response.md)
+2. [Prometheus, Grafana, and Alertmanager](foundations/19-prometheus-grafana-and-alertmanager.md)
+3. [DevOps troubleshooting and security errors](foundations/26-devops-troubleshooting-and-security-errors.md)
+
+You should be able to answer:
+
+- What is the difference between metric, log, trace, event, alert, SLI, SLO, and error budget?
+- How do you design alerts that page for user pain instead of noise?
+- How do burn-rate alerts work?
+- How do you run an incident without jumping randomly between dashboards?
+- How do you separate symptom, signal, cause, mitigation, and prevention?
+
+Exit criteria:
+
+- You can write useful PromQL for latency, errors, saturation, traffic, availability, and burn rate.
+- You can explain a clean incident timeline.
+- You can propose dashboards and alerts for a service without over-instrumenting it.
 
 ---
 
-## Nebius AI Sprint (10 Days)
+## Phase 4: Cloud Architecture, Infrastructure, And Delivery
 
-If you have a specific Nebius AI Staff SRE interview:
+This phase connects systems thinking with production delivery.
 
-- [nebius/README.md](nebius/README.md) — sprint overview and daily plan
-- [nebius/00-company-stack-interview-guide.md](nebius/00-company-stack-interview-guide.md)
-- [nebius/01-linux-deep-dive.md](nebius/01-linux-deep-dive.md)
-- [nebius/02-kubernetes-cilium-production.md](nebius/02-kubernetes-cilium-production.md)
-- [nebius/03-gpu-ai-infrastructure.md](nebius/03-gpu-ai-infrastructure.md)
-- [nebius/04-system-design.md](nebius/04-system-design.md)
+Read in this order:
+
+1. [System design and cloud architecture](foundations/07-system-design-cloud-architecture.md)
+2. [AWS cloud services and platform design](foundations/14-aws-cloud-services-and-platform-design.md)
+3. [Terraform infrastructure as code](foundations/15-terraform-infrastructure-as-code.md)
+4. [CI/CD trusted delivery and platform security](foundations/08-cicd-trusted-delivery-and-platform-security.md)
+5. [Delivery systems: Jenkins, GitHub Actions, and ArgoCD](foundations/17-delivery-systems-jenkins-github-actions-and-argocd.md)
+6. [Git and version control for platform engineers](foundations/16-git-and-version-control-for-platform-engineers.md)
+
+You should be able to answer:
+
+- How do you design a reliable, secure, multi-AZ platform?
+- Where should state live, and what should be stateless?
+- How should Terraform modules, state, environments, and approvals be organized?
+- What makes a deployment pipeline safe?
+- How do GitOps, image signing, policy checks, secrets handling, and rollback strategy fit together?
+
+Practice:
+
+- [Cloud design labs](hands-on-labs/cloud-design/)
+
+Exit criteria:
+
+- You can design a platform from load balancer to compute, storage, network, observability, security, delivery, and disaster recovery.
+- You can explain tradeoffs instead of listing services.
+- You can identify blast radius and failure modes in an architecture.
+
+---
+
+## Phase 5: Automation, Data, And Platform Services
+
+This phase teaches the supporting tools that SREs use to operate platforms at scale.
+
+Read in this order:
+
+1. [Bash and shell scripting](foundations/03-bash-and-shell-scripting.md)
+2. [Python for SRE](foundations/04-python-for-sre.md)
+3. [Ansible and host automation](foundations/18-ansible-and-host-automation.md)
+4. [Kafka and event streaming](foundations/20-kafka-and-event-streaming.md)
+5. [SQL and relational data for SRE](foundations/21-sql-and-relational-data-for-sre.md)
+6. [HTTP, APIs, and reverse proxy paths](foundations/22-http-apis-and-reverse-proxy-paths.md)
+7. [Azure DevOps crossover](foundations/23-azure-devops-crossover.md)
+8. [SonarQube and code quality gates](foundations/24-sonarqube-and-code-quality-gates.md)
+
+You should be able to answer:
+
+- When should you use Bash, Python, Ansible, Terraform, or a controller/operator?
+- How do you write scripts that are safe, observable, idempotent, and recoverable?
+- How do Kafka consumer lag, partitions, ordering, retries, and delivery semantics affect operations?
+- Which SQL queries help an SRE investigate performance, errors, and data integrity?
+- How do reverse proxies, API gateways, headers, timeouts, retries, and TLS termination affect reliability?
+
+Practice:
+
+- [Bash labs](hands-on-labs/bash/)
+- [Python labs](hands-on-labs/python/)
+
+Exit criteria:
+
+- You can automate routine checks without making production more dangerous.
+- You can debug common API, proxy, queue, SQL, and automation failures.
+- You can explain the operational tradeoff behind each tool.
+
+---
+
+## Phase 6: Synthesis, Capstone, And Staff-Level Reasoning
+
+Finish here after you have enough depth in the earlier phases.
+
+Read in this order:
+
+1. [End-to-end project and capstone patterns](foundations/27-end-to-end-project-and-capstone-patterns.md)
+2. [Senior/staff operating manual](foundations/00-senior-staff-operating-manual.md)
+3. [Reference answer: GCP public platform](hands-on-labs/cloud-design/reference-answer-gcp-public-platform.md)
+4. [Reference answer: GPU ML/AI platform](hands-on-labs/kubernetes/reference-answer-gpu-ml-ai-platform.md)
+
+You should be able to answer:
+
+- How do all layers connect into one production platform?
+- How do you reason about reliability, cost, security, operability, and delivery speed at the same time?
+- How do you lead an incident, design review, migration, or platform improvement plan?
+- How do you turn vague symptoms into a structured investigation?
+
+Exit criteria:
+
+- You can produce an end-to-end design with assumptions, architecture, data flow, failure modes, observability, rollout, and tradeoffs.
+- You can identify what a junior, mid-level, senior, and staff-level answer would each include.
+- You can explain not only what you would build, but how you would operate it for months.
+
+---
+
+## Optional Track: Nebius AI Sprint
+
+Use this only if you are preparing for a Nebius AI Staff SRE interview. It is intentionally specific and should not be the default learning path.
+
+- [Nebius sprint overview](nebius/README.md)
+- [Company, stack, and interview guide](nebius/00-company-stack-interview-guide.md)
+- [Linux deep dive](nebius/01-linux-deep-dive.md)
+- [Kubernetes and Cilium production](nebius/02-kubernetes-cilium-production.md)
+- [GPU AI infrastructure](nebius/03-gpu-ai-infrastructure.md)
+- [System design](nebius/04-system-design.md)
+- [Coding and algorithms](nebius/05-coding-algorithms.md)
+- [Stress interview and incident response](nebius/06-stress-interview-incident-response.md)
 
 ---
 
 ## Practice Scenarios
 
-Use these after completing relevant foundation phases:
+Use these after completing the matching foundation phases:
 
-- [mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md](mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
-- [mock-interviews/02-distributed-systems-and-resilience.md](mock-interviews/02-distributed-systems-and-resilience.md)
-- [mock-interviews/03-platform-cloud-and-security.md](mock-interviews/03-platform-cloud-and-security.md)
+- [Linux and Kubernetes troubleshooting mock](mock-interviews/01-nebius-linux-kubernetes-troubleshooting.md)
+- [Distributed systems and resilience mock](mock-interviews/02-distributed-systems-and-resilience.md)
+- [Platform, cloud, and security mock](mock-interviews/03-platform-cloud-and-security.md)
 
 ---
 
-## Daily Practice Rule
+## Daily Study Rule
 
-Every session, try to do all three:
+Every session should include three things:
 
-- one concept read (foundation guide)
-- one drill or lab (hands-on-labs)
-- one spoken answer (mock scenario or practice question)
+- **One concept read** from a foundation guide.
+- **One practical drill** from a lab or command sequence.
+- **One spoken or written answer** explaining what you learned.
 
-That combination compounds faster than passive reading alone.
+This is the main habit of the site. Read, practice, explain, repeat.
