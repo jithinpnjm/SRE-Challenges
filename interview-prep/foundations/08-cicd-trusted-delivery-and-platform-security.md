@@ -1,356 +1,519 @@
-# CI/CD, Trusted Delivery, and Platform Security
+# Foundations: CI/CD, Trusted Delivery, And Platform Security Zero To Hero
 
-CI/CD is the system that moves an idea from source code into safe production reality.
+CI/CD is the system that moves a change from source code into safe production reality.
 
-The easiest way to remember it is as a factory assembly line with quality control.
+For SRE and platform engineers, CI/CD is not only about automation. It is about reducing deployment risk, proving artifact trust, shortening feedback loops, and making rollback faster than panic.
 
----
+This guide is designed as a complete path:
 
-## What This Foundation Must Help You Do
-
-By the end of this guide, you should be able to:
-
-- explain CI vs CD clearly
-- design pipelines that are fast, safe, and trusted
-- choose rollout strategies such as rolling, canary, blue-green, and feature flags
-- understand GitOps reconciliation models
-- secure the software supply chain
-- answer platform delivery interviews like a senior engineer
+- Beginner: CI, CD, pipelines, artifacts, environments
+- Intermediate: tests, builds, registries, approvals, rollout strategies
+- Advanced: GitOps, OIDC, SBOM, signing, provenance, policy gates, progressive delivery
+- SRE Level: debug failed deploys, bad rollouts, flaky pipelines, secrets issues, rollback gaps
+- Interview Level: explain safe delivery systems and tradeoffs clearly
 
 ---
 
-## Memory Palace: CI/CD Is A Factory Assembly Line
-
-Imagine a modern factory producing high-value equipment.
+# Part 1: Memory Palace — CI/CD Is A Factory
 
 | CI/CD concept | Factory analogy | Production meaning |
 |---|---|---|
-| Git commit | Raw materials arriving | New change request |
-| Pull request | Design review desk | Human review before build |
-| CI trigger | Conveyor starts | Pipeline begins |
-| Lint / unit tests | Basic quality checks | Fast validation |
-| Integration tests | Full-system test chamber | Real interaction validation |
-| Security scan | Safety inspection | SAST / dependency / image scan |
-| Build artifact | Finished product | Binary/container/image |
-| Registry | Warehouse | Artifact storage |
-| Deploy pipeline | Shipping dock | Release path |
-| Canary release | Pilot shipment | Small rollout first |
-| Blue-green | Two warehouses, traffic switch | Instant rollback strategy |
-| Feature flag | Product switch disabled until launch | Release separate from deploy |
-| Rollback | Product recall | Restore previous good version |
-| GitOps controller | Automated warehouse robot | Reconciles desired state |
-| Signing / provenance | Tamper seal | Trusted artifact verification |
-
-### Story: Customers Report Defects
-
-A junior engineer says: “Ship faster.”
-
-A senior engineer asks:
-
-1. Did raw materials change? Commit history.
-2. Did inspection fail but get ignored? Test gate bypass.
-3. Was the product tampered with? Supply chain trust.
-4. Did only one shipment batch fail? Canary cohort.
-5. Can we recall safely now? Rollback path.
-
-Technical translation:
-
-- speed without gates creates outages
-- slow pipelines cause engineers to bypass process
-- no rollback means high deployment risk
-- provenance matters as much as functionality
+| Commit | raw material | proposed change |
+| Pull request | design review desk | human review |
+| CI pipeline | inspection conveyor | automated validation |
+| Unit test | small quality check | local behavior check |
+| Integration test | assembly test chamber | system interaction check |
+| Security scan | safety inspection | dependency/code/image risk check |
+| Artifact | finished product | image/binary/package |
+| Registry | warehouse | artifact storage |
+| Deployment | shipping dock | release to environment |
+| Canary | pilot shipment | small rollout first |
+| Blue-green | two warehouses | fast traffic switch/rollback |
+| Rollback | product recall | restore previous safe version |
+| Signature | tamper seal | artifact trust proof |
 
 ---
 
-## Senior Mental Model
+# Part 2: CI vs CD
 
-A mature delivery system optimizes four things simultaneously:
+## Continuous Integration
 
-1. **Speed** — developers get feedback quickly.
-2. **Safety** — broken changes stop early.
-3. **Trust** — only verified artifacts deploy.
-4. **Recoverability** — rollback is easy.
+Every change is integrated and validated frequently.
 
-If you improve speed while harming safety, you created risk.
-If you improve safety while making pipelines unusably slow, engineers route around you.
+Typical CI checks:
+
+- format
+- lint
+- unit tests
+- type checks
+- build
+- dependency scan
+- secret scan
+
+## Continuous Delivery
+
+Every validated change is deployable, but production may require approval.
+
+## Continuous Deployment
+
+Every validated change automatically deploys to production.
+
+Most teams should mature toward continuous delivery first.
 
 ---
 
-## CI vs CD
+# Part 3: Pipeline Anatomy
 
-| Term | Meaning |
-|---|---|
-| Continuous Integration | Every change is built, tested, scanned |
-| Continuous Delivery | Every good change is deployable, prod release usually approved |
-| Continuous Deployment | Every successful change auto-reaches production |
-
-Most mature enterprises prefer continuous delivery with strong automation.
-
----
-
-## Fast Pipeline Flow
+Typical path:
 
 ```text
-Commit -> PR Review -> CI -> Build -> Scan -> Artifact Registry -> Staging -> Production -> Observe
+PR -> lint -> test -> build -> scan -> sign -> publish artifact -> deploy staging -> smoke test -> approve -> production -> observe
 ```
 
-Golden rule:
+Principle:
 
-> Fail fast and fail left.
+> Cheap checks early, expensive checks later.
 
-Cheap checks first, expensive checks later.
+Fast feedback prevents engineers from bypassing the system.
 
 ---
 
-## Pipeline Gates That Matter
+# Part 4: Artifact Strategy
 
-## Early Gates (Fast)
+An artifact is what you deploy.
 
-- formatting
-- linting
-- unit tests
+Examples:
+
+- container image
+- binary
+- package
+- Helm chart
+- Terraform plan
+- static site build
+
+Production artifacts should be:
+
+- immutable
+- versioned
+- traceable to source commit
+- scanned
+- optionally signed
+- stored in a trusted registry
+
+Avoid deploying from a developer laptop.
+
+---
+
+# Part 5: Testing Strategy
+
+| Test type | Purpose | Placement |
+|---|---|---|
+| unit | small logic | early CI |
+| integration | components together | mid pipeline |
+| contract | API compatibility | mid pipeline |
+| e2e | user journey | staging/pre-prod |
+| smoke | basic production health | after deploy |
+| load | capacity/regression | scheduled or gated |
+
+Do not rely only on e2e tests. They are useful but slow and flaky if overused.
+
+---
+
+# Part 6: Security Gates
+
+Trusted delivery needs security checks.
+
+Common gates:
+
 - secret scanning
-- policy checks
-
-## Mid Gates
-
-- build success
 - dependency vulnerability scan
-- image scan
-- contract tests
+- SAST
+- container image scan
+- IaC scan
+- license policy
+- SBOM generation
+- artifact signing
+- admission policy
 
-## Late Gates
+Goal:
 
-- integration tests
-- staging smoke tests
-- approval gates
-- progressive rollout analysis
+> Block clearly unsafe changes without making normal delivery unusable.
 
 ---
 
-## Deployment Strategies
+# Part 7: Secrets And Credentials
+
+Avoid:
+
+- static cloud keys in CI
+- secrets printed in logs
+- secrets baked into images
+- broad deployment credentials
+- shared admin tokens
+
+Prefer:
+
+- OIDC federation
+- short-lived credentials
+- environment-scoped secrets
+- least privilege roles
+- workload identity
+- external secret managers
+
+A pipeline credential should have only the permissions required for that stage.
+
+---
+
+# Part 8: OIDC For CI/CD
+
+OIDC lets CI systems request short-lived cloud credentials without storing long-lived keys.
+
+Example GitHub Actions permission:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+AWS example:
+
+```yaml
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::123456789012:role/deploy-role
+    aws-region: eu-central-1
+```
+
+Trust policy should restrict repository, branch, environment, and workflow where possible.
+
+---
+
+# Part 9: Deployment Strategies
 
 ## Rolling Update
 
-Replace instances gradually.
+Gradually replaces old instances.
 
-Best for:
-
-- common stateless services
-- Kubernetes Deployments
-
-Risk:
-
-- bad version spreads if metrics are not watched.
+Best for normal stateless services.
 
 ## Canary
 
-Ship to a small percentage first.
+Routes small traffic percentage to new version.
 
-Best for:
-
-- risky changes
-- high-traffic systems with observability
-
-Use progression like:
-
-5% -> 25% -> 50% -> 100%
+Best when metrics are strong.
 
 ## Blue-Green
 
-Two production environments.
+Two environments. Traffic switches from old to new.
 
-Traffic flips from blue to green.
-
-Best for:
-
-- instant rollback needs
-- stable infra patterns
-
-Tradeoff:
-
-- double capacity cost.
+Best when rollback speed matters and capacity cost is acceptable.
 
 ## Feature Flags
 
-Deploy code dark. Release later.
+Deploy code disabled, release behavior separately.
 
-Best for:
-
-- decoupling deploy from release
-- rapid rollback without redeploy
-- experiments / cohort rollout
+Best for risky product behavior, experiments, and quick rollback.
 
 ---
 
-## GitOps: The Automated Warehouse Robot
+# Part 10: Progressive Delivery
 
-Desired state lives in Git.
+Progressive delivery increases rollout only if health remains good.
+
+Example progression:
+
+```text
+1% -> 5% -> 25% -> 50% -> 100%
+```
+
+Promotion should check:
+
+- error rate
+- p95/p99 latency
+- saturation
+- business transaction success
+- logs/traces for new errors
+
+Canary without observability is just delayed failure.
+
+---
+
+# Part 11: GitOps Delivery
+
+GitOps stores desired deployment state in Git.
 
 Flow:
 
 ```text
-Developer change -> CI builds image -> manifest updated in Git -> ArgoCD/Flux detects drift -> cluster reconciles
+CI builds image -> updates manifest repo -> ArgoCD/Flux syncs cluster -> cluster matches Git
 ```
 
 Benefits:
 
-- auditable history
-- easy rollback via Git revert
-- drift correction
-- safer operations model
+- Git audit trail
+- drift detection
+- rollback via Git revert
+- CI does not need broad cluster access
 
 ---
 
-## Supply Chain Security: Tamper Seals
+# Part 12: Supply Chain Trust
 
 Ask:
 
-- who built this artifact?
-- from what source commit?
-- were dependencies trusted?
-- was the image signed?
-- can production verify provenance?
+- which source commit produced this artifact?
+- who approved the change?
+- what dependencies were included?
+- was the image scanned?
+- was the artifact signed?
+- can production verify it?
 
-Useful controls:
+Useful concepts:
 
-- pinned dependencies
-- SBOM generation
-- image signing (Cosign)
-- SLSA maturity practices
-- registry restrictions
-- admission policies
+- SBOM
+- SLSA
+- provenance
+- Cosign
+- admission controller
+- digest pinning
 
----
-
-## Secrets Handling
-
-Never:
-
-- commit secrets to Git
-- bake secrets into images
-- print secrets in logs
-- overgrant CI credentials
-
-Prefer:
-
-- Vault / cloud secret manager
-- workload identity
-- short-lived credentials
-- least privilege service accounts
+Production should prefer image digests over mutable tags.
 
 ---
 
-## Real Incident Stories
+# Part 13: Platform Security Controls
 
-## Scenario 1: Pipeline Takes 45 Minutes
+Delivery systems need guardrails:
 
-Wrong assumption: more checks = safer.
+- protected branches
+- required reviews
+- required status checks
+- CODEOWNERS
+- environment approvals
+- separate prod credentials
+- audit logs
+- restricted runners
+- artifact retention policy
 
-Better path:
+The goal is not bureaucracy. The goal is safe change at speed.
 
-- parallelize jobs
+---
+
+# Part 14: Rollback Design
+
+Rollback options:
+
+- Git revert
+- previous image digest
+- ArgoCD rollback
+- Helm rollback
+- blue-green traffic switch
+- feature flag disable
+- database migration rollback or forward fix
+
+Important:
+
+> Application rollback is easy only if data/schema changes were designed for rollback.
+
+Use expand-and-contract migrations for safer database changes.
+
+---
+
+# Part 15: Common Failure Modes
+
+## Pipeline Too Slow
+
+Symptoms:
+
+- engineers avoid CI
+- large PRs accumulate
+- hotfixes bypass checks
+
+Fix:
+
 - cache dependencies
-- split fast vs slow suites
-- run targeted tests by change scope
+- parallelize tests
+- split fast/slow suites
+- run targeted tests
 
-Why it matters:
+## Flaky Tests Block Delivery
 
-Slow pipelines cause human bypass behavior.
+Fix:
 
-## Scenario 2: Deploy Caused Error Spike
+- quarantine flaky tests
+- track ownership
+- fix root cause
+- do not normalize rerun culture
 
-Wrong assumption: keep debugging in prod immediately.
+## Deploy Passed But App Broken
 
-Better path:
+Likely gaps:
 
-1. compare deploy timestamp with metrics shift
-2. rollback or pause rollout
-3. confirm recovery
-4. inspect diff afterward
+- shallow health checks
+- missing config validation
+- no smoke tests
+- weak observability
 
-## Scenario 3: Registry Compromise Concern
+## Rollback Failed
 
-Wrong assumption: image exists, so trust it.
+Likely causes:
 
-Better path:
-
-- verify signature
-- verify source provenance
-- verify digest pinned in manifests
-
-## Scenario 4: Hotfix Needed During Incident
-
-Wrong assumption: bypass all controls.
-
-Better path:
-
-- use emergency branch/process
-- keep minimum tests
-- require visible approval
-- follow with retrospective cleanup PR
+- database schema incompatibility
+- artifact not retained
+- no tested rollback path
+- config drift
 
 ---
 
-## Command / Tool Interpretation Table
+# Part 16: Incident Stories
 
-| Tool | What it answers | Bad signs | Next step |
-|---|---|---|---|
-| CI run history | Which gate failed? | repeated flaky stage | stabilize tests |
-| Coverage report | What changed untested? | critical path uncovered | add tests |
-| Image scan | Is artifact vulnerable? | critical CVEs | patch/rebuild |
-| Registry digest | Exactly what will deploy? | mutable tag only | pin digest |
-| ArgoCD sync status | Is cluster at desired state? | OutOfSync/Degraded | inspect manifests/events |
-| Deploy metrics | Did rollout hurt users? | errors/latency rise | rollback/pause |
-| Audit log | Who approved/released? | unclear ownership | tighten controls |
+## Bad Deploy Caused Error Spike
 
----
+Response:
 
-## Kubernetes / Cloud Connection
+- compare deploy timestamp to metrics
+- pause rollout
+- rollback if confidence is high
+- confirm recovery with user-facing metrics
+- investigate after mitigation
 
-- Rolling updates depend on readiness probes.
-- Canary depends on observability quality.
-- GitOps depends on healthy controllers and RBAC.
-- Secret managers depend on IAM/workload identity.
-- Multi-region rollout should sequence blast radius.
+## Static Cloud Key Leaked
 
----
+Response:
 
-## Hands-On Drill
+- revoke/rotate credential
+- audit usage
+- replace with OIDC
+- tighten permissions
 
-Take one service and design:
+## Mutable Latest Tag Deployed Wrong Image
 
-1. CI stages under 10 minutes.
-2. Security gates.
-3. Artifact signing.
-4. Canary rollout with rollback rule.
-5. GitOps promotion flow.
+Response:
 
-Then explain why each step exists.
+- pin image digest
+- enforce immutable tags
+- improve release metadata
 
----
+## Canary Failed But Still Promoted
 
-## Interview Answer Shape
+Cause:
 
-If asked, “How would you design a safe deployment platform?” a strong answer is:
+- no automated metric gate
 
-> I would optimize for fast feedback, strong trust, and easy recovery. Every change should pass lint, tests, scans, and produce an immutable signed artifact. Production rollout would use progressive delivery such as canary or blue-green with automated metric checks. Desired state would live in Git and be reconciled by ArgoCD or Flux. Secrets would come from a dedicated manager with least privilege identities. Most importantly, rollback must be faster than root-cause analysis.
+Fix:
+
+- gate promotion on SLO-aligned metrics
 
 ---
 
-## Recall Prompts
+# Part 17: Troubleshooting By Symptom
 
-- In the factory model, what is a registry?
-- Why is slow CI dangerous culturally?
-- When is canary better than blue-green?
-- Why pin image digests instead of mutable tags?
-- Why should rollback be faster than debugging?
+## CI Fails At Lint
+
+Check:
+
+- formatting rules
+- local tool version
+- generated files
+- changed config
+
+## Image Build Fails
+
+Check:
+
+- Dockerfile order
+- dependency registry
+- build cache
+- platform architecture
+- credentials to private packages
+
+## Deploy Fails
+
+Check:
+
+- artifact exists
+- manifest references right tag/digest
+- cluster credentials
+- namespace/RBAC
+- rollout events
+
+## Production Degraded After Deploy
+
+Check:
+
+- deploy timeline
+- error and latency metrics
+- logs/traces by version
+- dependency behavior
+- rollback readiness
 
 ---
 
-## What To Study Next
+# Part 18: Command And Tool Interpretation Table
 
-- Delivery systems: Jenkins, GitHub Actions, and ArgoCD
-- Terraform and Infrastructure as Code
-- YAML and Kubernetes manifest design
-- Git and version control for platform engineers
+| Signal/tool | What it answers | Bad signs |
+|---|---|---|
+| CI run logs | where validation failed | repeated flaky stage |
+| test report | what behavior broke | critical path uncovered |
+| image scan | artifact risk | critical vulnerability |
+| SBOM | dependency inventory | unknown dependency source |
+| registry digest | exact artifact | mutable tag only |
+| ArgoCD sync | cluster desired state | OutOfSync/Degraded |
+| deploy metrics | user impact | errors/latency increase |
+| audit log | who changed what | unclear approval path |
+
+---
+
+# Part 19: Labs
+
+## Beginner
+
+- create CI workflow for lint/test
+- publish test report
+- build container image
+
+## Intermediate
+
+- add image scan
+- add environment approval
+- deploy to staging
+- add smoke test
+
+## Advanced
+
+- configure OIDC cloud auth
+- generate SBOM
+- sign image
+- deploy via GitOps
+- implement canary gate
+- test rollback from bad version
+
+---
+
+# Part 20: Interview Questions
+
+- CI vs continuous delivery vs continuous deployment?
+- Why separate build from deploy?
+- Why are mutable tags risky?
+- What is OIDC and why is it safer than static keys?
+- How do you design rollback?
+- What is progressive delivery?
+- How do you secure a pipeline?
+- Why can database migrations break rollback?
+
+---
+
+# Part 21: Senior Answer Shape
+
+> I design CI/CD around fast feedback, trusted immutable artifacts, least-privilege credentials, observable rollout, and tested rollback. CI validates and publishes the artifact once. CD promotes that artifact through environments using approvals, policy checks, and deployment strategies such as canary or blue-green. For Kubernetes, I prefer GitOps so production desired state is reviewed in Git and drift is visible. I avoid static credentials by using OIDC and make rollback a first-class requirement, especially when database changes are involved.
+
+---
+
+# Recall Prompts
+
+- Why is a registry like a warehouse?
+- Why should CI produce one immutable artifact?
+- Why is canary weak without metrics?
+- Why should production use short-lived credentials?
+- Why is rollback a design requirement, not an afterthought?
