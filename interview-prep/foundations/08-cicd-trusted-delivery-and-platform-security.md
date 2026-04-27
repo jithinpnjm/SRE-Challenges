@@ -1,614 +1,356 @@
 # CI/CD, Trusted Delivery, and Platform Security
 
-## What It Is and Why It Matters
+CI/CD is the system that moves an idea from source code into safe production reality.
 
-CI/CD (Continuous Integration / Continuous Delivery) is the practice of automating the path from a code commit to a running production system. CI handles building and testing. CD handles packaging, deployment, and release.
-
-At a deeper level, CI/CD is a **control system**: it enforces quality gates, security checks, and deployment policies on every change. A mature CI/CD system ensures that nothing reaches production without passing defined tests, security scans, and approval processes. This is what "trusted delivery" means — you can trust that anything in production went through your gates.
-
-Platform security woven into CI/CD means: secrets management, image signing, supply chain verification, and policy enforcement are automated — not left to individual developers to remember.
+The easiest way to remember it is as a factory assembly line with quality control.
 
 ---
 
-## Mental Model
+## What This Foundation Must Help You Do
 
-The pipeline is a series of gates. Each gate either passes the artifact forward or stops it.
+By the end of this guide, you should be able to:
 
-```
-Code Commit (git push)
-    → CI Trigger
-    → Build (compile, package)
-    → Test (unit, integration, security scan)
-    → Artifact (Docker image, binary)
-    → Deliver to registry
-    → Deploy to staging
-    → Deploy to production
-```
-
-Key principle: **fail fast, fail left**. Cheap checks (unit tests, lint) run first. Expensive checks (integration tests, security scans) run after the cheap ones pass. Prod deploys only happen after all gates succeed.
+- explain CI vs CD clearly
+- design pipelines that are fast, safe, and trusted
+- choose rollout strategies such as rolling, canary, blue-green, and feature flags
+- understand GitOps reconciliation models
+- secure the software supply chain
+- answer platform delivery interviews like a senior engineer
 
 ---
 
-## Continuous Integration
+## Memory Palace: CI/CD Is A Factory Assembly Line
 
-### What CI Should Validate
+Imagine a modern factory producing high-value equipment.
 
-Every commit should trigger:
-1. **Syntax and format** (`terraform fmt`, `go vet`, `pylint`, `eslint`)
-2. **Unit tests** (fast, isolated, no external dependencies)
-3. **Security scanning** (SAST: static analysis; dependency scanning: known CVEs)
-4. **Build** (does the artifact compile/build cleanly?)
-5. **Integration tests** (against real services, may run on staging branch only)
-6. **Container image scan** (if building Docker images)
+| CI/CD concept | Factory analogy | Production meaning |
+|---|---|---|
+| Git commit | Raw materials arriving | New change request |
+| Pull request | Design review desk | Human review before build |
+| CI trigger | Conveyor starts | Pipeline begins |
+| Lint / unit tests | Basic quality checks | Fast validation |
+| Integration tests | Full-system test chamber | Real interaction validation |
+| Security scan | Safety inspection | SAST / dependency / image scan |
+| Build artifact | Finished product | Binary/container/image |
+| Registry | Warehouse | Artifact storage |
+| Deploy pipeline | Shipping dock | Release path |
+| Canary release | Pilot shipment | Small rollout first |
+| Blue-green | Two warehouses, traffic switch | Instant rollback strategy |
+| Feature flag | Product switch disabled until launch | Release separate from deploy |
+| Rollback | Product recall | Restore previous good version |
+| GitOps controller | Automated warehouse robot | Reconciles desired state |
+| Signing / provenance | Tamper seal | Trusted artifact verification |
 
-### GitHub Actions CI Example
+### Story: Customers Report Defects
 
-```yaml
-# .github/workflows/ci.yml
-name: CI
+A junior engineer says: “Ship faster.”
 
-on:
-  push:
-    branches: ['**']
-  pull_request:
-    branches: [main]
+A senior engineer asks:
 
-jobs:
-  test:
-    name: Test and Build
-    runs-on: ubuntu-latest
+1. Did raw materials change? Commit history.
+2. Did inspection fail but get ignored? Test gate bypass.
+3. Was the product tampered with? Supply chain trust.
+4. Did only one shipment batch fail? Canary cohort.
+5. Can we recall safely now? Rollback path.
 
-    steps:
-      - uses: actions/checkout@v4
+Technical translation:
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Lint
-        run: |
-          flake8 src/
-          black --check src/
-
-      - name: Unit tests
-        run: pytest tests/unit/ -v --cov=src --cov-report=xml
-        env:
-          TESTING: "true"
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dependency vulnerability scan
-        uses: snyk/actions/python@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-      - name: SAST scan
-        uses: github/codeql-action/analyze@v3
-        with:
-          languages: python
-
-  build-image:
-    name: Build and Scan Image
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: docker build -t myapp:${{ github.sha }} .
-
-      - name: Scan image for CVEs
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'myapp:${{ github.sha }}'
-          format: 'table'
-          exit-code: '1'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Push to registry
-        if: github.ref == 'refs/heads/main'
-        run: |
-          echo ${{ secrets.REGISTRY_TOKEN }} | docker login registry.io -u _ --password-stdin
-          docker tag myapp:${{ github.sha }} registry.io/org/myapp:${{ github.sha }}
-          docker push registry.io/org/myapp:${{ github.sha }}
-```
-
-### Branch Strategy
-
-```
-main         → production deployments (protected, requires PR approval)
-staging      → staging environment (auto-deploy from main via CD)
-feature/*    → developer branches (CI only, no deploy)
-hotfix/*     → emergency fixes (bypass staging, go straight to prod with approval)
-```
-
-Branch protection rules on `main`:
-- Require PR with at least 1 approval
-- Require status checks to pass (CI must succeed)
-- Require linear history (no merge commits, force rebase)
-- No force push
+- speed without gates creates outages
+- slow pipelines cause engineers to bypass process
+- no rollback means high deployment risk
+- provenance matters as much as functionality
 
 ---
 
-## Continuous Delivery vs Continuous Deployment
+## Senior Mental Model
 
-| | Continuous Delivery | Continuous Deployment |
-|--|---|---|
-| Definition | Every change is ready to deploy, but deploy is manual | Every successful build automatically deploys to prod |
-| Best for | Services with regulatory compliance, staged rollouts | Fast-moving products with high test confidence |
-| Risk | Manual step can cause delay or be forgotten | A bad commit can reach prod before humans notice |
+A mature delivery system optimizes four things simultaneously:
 
-Most teams use **continuous delivery**: code is always deployable, but prod deploy requires a manual trigger or approval step.
+1. **Speed** — developers get feedback quickly.
+2. **Safety** — broken changes stop early.
+3. **Trust** — only verified artifacts deploy.
+4. **Recoverability** — rollback is easy.
+
+If you improve speed while harming safety, you created risk.
+If you improve safety while making pipelines unusably slow, engineers route around you.
+
+---
+
+## CI vs CD
+
+| Term | Meaning |
+|---|---|
+| Continuous Integration | Every change is built, tested, scanned |
+| Continuous Delivery | Every good change is deployable, prod release usually approved |
+| Continuous Deployment | Every successful change auto-reaches production |
+
+Most mature enterprises prefer continuous delivery with strong automation.
+
+---
+
+## Fast Pipeline Flow
+
+```text
+Commit -> PR Review -> CI -> Build -> Scan -> Artifact Registry -> Staging -> Production -> Observe
+```
+
+Golden rule:
+
+> Fail fast and fail left.
+
+Cheap checks first, expensive checks later.
+
+---
+
+## Pipeline Gates That Matter
+
+## Early Gates (Fast)
+
+- formatting
+- linting
+- unit tests
+- secret scanning
+- policy checks
+
+## Mid Gates
+
+- build success
+- dependency vulnerability scan
+- image scan
+- contract tests
+
+## Late Gates
+
+- integration tests
+- staging smoke tests
+- approval gates
+- progressive rollout analysis
 
 ---
 
 ## Deployment Strategies
 
-### Blue-Green Deployment
+## Rolling Update
 
-Two identical production environments. Traffic switches from "blue" (current) to "green" (new) atomically.
+Replace instances gradually.
 
-```
-Before: 100% traffic → blue (v1.2)
-During: deploy v1.3 to green, run smoke tests
-After:  100% traffic → green (v1.3)
-Old:    blue now idle, kept for 30 minutes for instant rollback
-```
+Best for:
 
-Rollback: switch traffic back to blue (seconds, not minutes).
+- common stateless services
+- Kubernetes Deployments
 
-Downsides: requires 2x infrastructure, database schema changes must be backward compatible with both versions.
+Risk:
 
-### Canary Deployment
+- bad version spreads if metrics are not watched.
 
-Gradually roll out to a percentage of users:
+## Canary
 
-```
-Deploy v1.3 to 5% of pods
-Monitor error rate and latency for 30 minutes
-If healthy: increase to 20%, then 50%, then 100%
-If degraded: immediately route 100% back to v1.2
-```
+Ship to a small percentage first.
 
-In Kubernetes, implement via weighted routing (Argo Rollouts, Flagger, or manual with two Deployments + Service splitting):
+Best for:
 
-```yaml
-# Argo Rollouts canary strategy
-apiVersion: argoproj.io/v1alpha1
-kind: Rollout
-metadata:
-  name: myapp
-spec:
-  strategy:
-    canary:
-      canaryService: myapp-canary
-      stableService: myapp-stable
-      steps:
-        - setWeight: 10      # 10% to canary
-        - pause:
-            duration: 10m    # wait 10 minutes
-        - setWeight: 50
-        - pause:
-            duration: 10m
-        - setWeight: 100
-      analysis:
-        templates:
-          - templateName: error-rate-check
-        startingStep: 1
-```
+- risky changes
+- high-traffic systems with observability
 
-### Rolling Update (Kubernetes Default)
+Use progression like:
 
-Kubernetes default deployment strategy: replace old pods gradually.
+5% -> 25% -> 50% -> 100%
 
-```yaml
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1          # can create 1 extra pod above desired count
-      maxUnavailable: 0    # never reduce below desired count (ensures capacity)
-```
+## Blue-Green
 
-With `maxUnavailable: 0`, Kubernetes creates a new pod, waits for it to pass readiness, then terminates an old pod. Zero-downtime.
+Two production environments.
 
-### Feature Flags
+Traffic flips from blue to green.
 
-Feature flags decouple deployment from release. Code is deployed everywhere but inactive. Feature is activated independently, per user segment or percentage:
+Best for:
 
-```python
-import flagsmith  # or LaunchDarkly, Unleash, etc.
+- instant rollback needs
+- stable infra patterns
 
-client = flagsmith.Flagsmith(environment_key="...")
+Tradeoff:
 
-def handle_checkout(request):
-    flags = client.get_environment_flags()
-    if flags.is_feature_enabled("new_checkout_flow"):
-        return new_checkout_handler(request)
-    return legacy_checkout_handler(request)
-```
+- double capacity cost.
 
-Benefits: immediate rollback (disable flag, no redeploy), A/B testing, dark launches (deploy to 0%, verify metrics, then activate).
+## Feature Flags
+
+Deploy code dark. Release later.
+
+Best for:
+
+- decoupling deploy from release
+- rapid rollback without redeploy
+- experiments / cohort rollout
 
 ---
 
-## Supply Chain Security
+## GitOps: The Automated Warehouse Robot
 
-### Software Supply Chain Attacks
+Desired state lives in Git.
 
-Supply chain attacks compromise the build process rather than the deployed code:
-- Malicious dependency (npm, pip) included in a legitimate package
-- Compromised CI system that injects malicious code during build
-- Stolen signing keys that allow publishing fake legitimate packages
+Flow:
 
-High-profile examples: SolarWinds (CI compromise), Log4Shell (dependency), XZ Utils backdoor (supply chain).
-
-### SLSA Framework
-
-SLSA (Supply-chain Levels for Software Artifacts) is a framework for measuring supply chain security:
-
-- **Level 1**: Build process is documented
-- **Level 2**: Build is hosted on a dedicated build service, not developer machines
-- **Level 3**: Build is tamper-resistant, source integrity verified
-- **Level 4**: Two-person review, hermetic builds, reproducible
-
-For most organizations, target SLSA Level 2 or 3.
-
-### Image Signing with Cosign
-
-Sign container images to ensure they haven't been tampered with:
-
-```bash
-# Generate signing key pair
-cosign generate-key-pair
-
-# Sign image after building and pushing
-cosign sign --key cosign.key registry.io/org/myapp:sha256-<digest>
-
-# Verify image signature before deploying
-cosign verify --key cosign.pub registry.io/org/myapp:sha256-<digest>
+```text
+Developer change -> CI builds image -> manifest updated in Git -> ArgoCD/Flux detects drift -> cluster reconciles
 ```
 
-In Kubernetes, use admission webhooks to enforce that only signed images can run:
+Benefits:
 
-```yaml
-# Kyverno policy: only allow signed images
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: verify-image-signature
-spec:
-  rules:
-    - name: check-image-signature
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-      verifyImages:
-        - imageReferences:
-            - "registry.io/org/*"
-          attestors:
-            - count: 1
-              entries:
-                - keys:
-                    publicKeys: |-
-                      -----BEGIN PUBLIC KEY-----
-                      <your-cosign-public-key>
-                      -----END PUBLIC KEY-----
-```
-
-### Dependency Pinning and SBOM
-
-**Pin dependency versions** to prevent unexpected updates:
-```
-# requirements.txt — pin exact versions in production
-flask==3.0.0
-requests==2.31.0
-# Not: flask>=2.0 (allows any version >= 2.0)
-```
-
-**SBOM (Software Bill of Materials)**: a machine-readable list of all components in your software. Generate at build time:
-
-```bash
-# Generate SBOM for a Docker image
-syft registry.io/org/myapp:latest -o spdx-json > sbom.json
-
-# Attach SBOM to image (discoverable via OCI)
-cosign attach sbom --sbom sbom.json registry.io/org/myapp:latest
-
-# Scan SBOM for vulnerabilities
-grype sbom:sbom.json
-```
+- auditable history
+- easy rollback via Git revert
+- drift correction
+- safer operations model
 
 ---
 
-## Secrets Management
+## Supply Chain Security: Tamper Seals
 
-### What Not to Do
+Ask:
 
-```bash
-# Never commit secrets to git
-echo "DB_PASSWORD=supersecret" > .env   # if .env is in the repo: breach
+- who built this artifact?
+- from what source commit?
+- were dependencies trusted?
+- was the image signed?
+- can production verify provenance?
 
-# Never put secrets in Docker images
-ENV DB_PASSWORD=supersecret   # visible in image layers, in image manifest
+Useful controls:
 
-# Never log secrets
-print(f"Connecting to DB with password: {password}")
-
-# Never pass secrets via command line arguments
-psql -h db-host -U user -p password   # visible in ps aux
-```
-
-### Vault (HashiCorp)
-
-Vault is the standard secrets management solution for cloud-native systems:
-
-```bash
-# Store a secret
-vault kv put secret/prod/database \
-  password="supersecret" \
-  username="appuser"
-
-# Read a secret (for humans)
-vault kv get secret/prod/database
-
-# Dynamic secrets: Vault generates short-lived DB credentials
-# Application gets a credential that expires in 1 hour
-vault read database/creds/myapp-role
-# Key             Value
-# username        v-appuser-abc123
-# password        A1b2C3d4E5f6...
-# lease_duration  1h
-```
-
-Applications authenticate to Vault using Kubernetes service account tokens (IRSA on AWS, Workload Identity on GCP):
-
-```yaml
-# Vault Agent as sidecar — injects secrets as files
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: myapp
-  annotations:
-    vault.hashicorp.com/agent-inject: "true"
-    vault.hashicorp.com/role: "myapp"
-    vault.hashicorp.com/agent-inject-secret-db: "secret/prod/database"
-    vault.hashicorp.com/agent-inject-template-db: |
-      {{- with secret "secret/prod/database" -}}
-      DB_PASSWORD={{ .Data.data.password }}
-      {{- end }}
-```
-
-### Kubernetes Secrets
-
-Kubernetes Secrets are base64-encoded (not encrypted at rest by default). Always:
-- Enable etcd encryption at rest
-- Or use External Secrets Operator to pull secrets from Vault/AWS Secrets Manager/GCP Secret Manager
-
-```yaml
-# External Secrets Operator: sync AWS Secrets Manager → Kubernetes Secret
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: database-secret
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: aws-secrets-manager
-    kind: ClusterSecretStore
-  target:
-    name: database-credentials
-  data:
-    - secretKey: DB_PASSWORD
-      remoteRef:
-        key: prod/database
-        property: password
-```
+- pinned dependencies
+- SBOM generation
+- image signing (Cosign)
+- SLSA maturity practices
+- registry restrictions
+- admission policies
 
 ---
 
-## Platform Security Policies
+## Secrets Handling
 
-### OPA/Gatekeeper — Policy as Code
+Never:
 
-Open Policy Agent (OPA) with Gatekeeper enforces policies on Kubernetes resources at admission time:
+- commit secrets to Git
+- bake secrets into images
+- print secrets in logs
+- overgrant CI credentials
 
-```yaml
-# ConstraintTemplate: define the policy logic
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: requireresourcelimits
-spec:
-  crd:
-    spec:
-      names:
-        kind: RequireResourceLimits
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package requireresourcelimits
+Prefer:
 
-        violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
-          not container.resources.limits.memory
-          msg := sprintf("Container '%v' must have memory limits", [container.name])
-        }
-
----
-# Constraint: apply the policy
-apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: RequireResourceLimits
-metadata:
-  name: require-resource-limits
-spec:
-  match:
-    kinds:
-      - apiGroups: [""]
-        kinds: ["Pod"]
-    namespaces: ["prod", "staging"]
-```
-
-Common policies to enforce:
-- Container resource limits required
-- No privileged containers
-- No `hostNetwork` or `hostPID`
-- Image must come from approved registry
-- Image must be signed
-- No `latest` image tag
-
-### RBAC
-
-Kubernetes RBAC: controls who can do what to which resources.
-
-```yaml
-# Role: permissions within a namespace
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: deploy-operator
-  namespace: production
-rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "patch", "update"]
-  - apiGroups: [""]
-    resources: ["pods", "pods/log"]
-    verbs: ["get", "list"]
-
----
-# RoleBinding: assign the role
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: ci-deploy-binding
-  namespace: production
-subjects:
-  - kind: ServiceAccount
-    name: ci-deployer
-    namespace: ci-system
-roleRef:
-  kind: Role
-  name: deploy-operator
-  apiGroup: rbac.authorization.k8s.io
-```
-
-Principle of least privilege: CI/CD service accounts should only be able to update images in specific deployments, not have cluster-admin.
+- Vault / cloud secret manager
+- workload identity
+- short-lived credentials
+- least privilege service accounts
 
 ---
 
-## GitOps
+## Real Incident Stories
 
-GitOps is the practice of using Git as the single source of truth for both application and infrastructure configuration. The Git repository is the desired state; automated operators ensure the running system matches it.
+## Scenario 1: Pipeline Takes 45 Minutes
 
-```
-Developer pushes to Git
-    → CI builds and tests
-    → CI updates image tag in manifests repo
-    → ArgoCD / Flux detects manifest change
-    → ArgoCD applies change to Kubernetes
-    → Kubernetes reconciles
-```
+Wrong assumption: more checks = safer.
 
-Key property: the cluster never runs anything that isn't in Git. Drift is automatically corrected.
+Better path:
 
-ArgoCD Application:
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: myapp-prod
-spec:
-  project: production
-  source:
-    repoURL: https://github.com/org/k8s-manifests
-    targetRevision: main
-    path: apps/myapp/prod
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: production
-  syncPolicy:
-    automated:
-      prune: true       # remove resources deleted from git
-      selfHeal: true    # correct manual changes in cluster
-    syncOptions:
-      - CreateNamespace=true
-```
+- parallelize jobs
+- cache dependencies
+- split fast vs slow suites
+- run targeted tests by change scope
 
----
+Why it matters:
 
-## Common Failure Modes
+Slow pipelines cause human bypass behavior.
 
-**Flaky tests blocking deploys:** Tests that intermittently fail unrelated to code changes block the pipeline. Fix: identify flaky tests (quarantine them), investigate root cause (usually race conditions, external service timeouts). Never skip flaky tests permanently — they hide real bugs.
+## Scenario 2: Deploy Caused Error Spike
 
-**Secrets in CI logs:** A `set -x` in a shell script, or an overly verbose error message, prints an env var containing a secret. Fix: use `set +x` around secret-handling code, use `::add-mask::` in GitHub Actions to mask values in logs.
+Wrong assumption: keep debugging in prod immediately.
 
-**Slow pipelines:** Full pipeline taking 45 minutes → developers stop waiting for CI → bypass safety. Fix: parallelize jobs, cache dependencies, use incremental builds, split tests into fast/slow suites.
+Better path:
 
-**No rollback capability:** Deploy goes wrong, no easy way back. Fix: always keep the previous artifact version, test rollback as part of your deploy runbook, use blue-green or canary to reduce blast radius.
+1. compare deploy timestamp with metrics shift
+2. rollback or pause rollout
+3. confirm recovery
+4. inspect diff afterward
 
-**Supply chain compromise via unpinned dependencies:** `pip install -r requirements.txt` with `flask>=2.0` installs a malicious flask version published after your last test. Fix: pin exact versions in production, use `pip-compile` to generate locked requirements, periodically update and re-test.
+## Scenario 3: Registry Compromise Concern
+
+Wrong assumption: image exists, so trust it.
+
+Better path:
+
+- verify signature
+- verify source provenance
+- verify digest pinned in manifests
+
+## Scenario 4: Hotfix Needed During Incident
+
+Wrong assumption: bypass all controls.
+
+Better path:
+
+- use emergency branch/process
+- keep minimum tests
+- require visible approval
+- follow with retrospective cleanup PR
 
 ---
 
-## Key Questions and Answers
+## Command / Tool Interpretation Table
 
-**Q: What is the difference between continuous delivery and continuous deployment?**
-
-Continuous delivery means every build is ready to deploy, but production deployment is triggered by a human decision (button click, approval step). Continuous deployment means every successful build automatically deploys to production with no human gate. Most regulated or large-scale environments use continuous delivery: you want a human to confirm before prod impact, especially for major changes. Continuous deployment is more common in fast-moving consumer products with high automated test confidence.
-
-**Q: How do you handle database migrations in a CI/CD pipeline?**
-
-The deploy should be backward-compatible with the previous schema during the migration window. Three-phase approach: (1) expand migration — add new columns/tables, keeping old ones; (2) deploy new code that reads from both old and new schema; (3) contract migration — remove old columns once no code references them. Never do a single migration that requires code and schema to change simultaneously — that requires a maintenance window. Tools like Flyway and Liquibase manage migration tracking.
-
-**Q: A secret was accidentally committed to git. What do you do?**
-
-Treat it as compromised immediately — assume it was seen. Steps: (1) rotate the secret (generate a new one) before you do anything else; (2) revoke the old secret; (3) remove it from git history (`git filter-branch` or `git filter-repo`); (4) force-push the cleaned history; (5) notify stakeholders that a rotation happened. The rotation must happen first — cleaning git history doesn't help if the secret was already used by an attacker.
-
-**Q: What is SLSA and why does it matter?**
-
-SLSA (Supply-chain Levels for Software Artifacts) is a framework for measuring how trustworthy your build process is. At low levels, anyone who can access your CI system can inject malicious code into your builds. At higher levels, builds are tamper-resistant, every build is logged with provenance, and two-person review is required for code changes. It matters because software supply chain attacks have become a major attack vector — compromise the build pipeline instead of the running code.
-
-**Q: How do you enforce image provenance (that only internally-built, signed images run in production)?**
-
-Use an admission webhook (Kyverno or OPA/Gatekeeper) that requires images to be signed by your internal CI key. Images are signed during the CI build using Cosign. The signing key is protected (stored in Vault, accessed only by CI). Even if someone has push access to the registry, they can't push an image that will pass the admission check without the private signing key. Combine with registry restriction: only allow images from your internal registry, not public Docker Hub.
+| Tool | What it answers | Bad signs | Next step |
+|---|---|---|---|
+| CI run history | Which gate failed? | repeated flaky stage | stabilize tests |
+| Coverage report | What changed untested? | critical path uncovered | add tests |
+| Image scan | Is artifact vulnerable? | critical CVEs | patch/rebuild |
+| Registry digest | Exactly what will deploy? | mutable tag only | pin digest |
+| ArgoCD sync status | Is cluster at desired state? | OutOfSync/Degraded | inspect manifests/events |
+| Deploy metrics | Did rollout hurt users? | errors/latency rise | rollback/pause |
+| Audit log | Who approved/released? | unclear ownership | tighten controls |
 
 ---
 
-## Points to Remember
+## Kubernetes / Cloud Connection
 
-- CI = build + test + scan; CD = deploy + release management
-- Fail fast: cheap checks first (lint, unit tests), expensive checks last
-- Blue-green: instant rollback; canary: gradual rollout with automatic analysis
-- Feature flags decouple deployment from release — activate independently, rollback by disabling flag
-- Never commit secrets to git; never put secrets in Docker image layers
-- Use external secrets (Vault, AWS Secrets Manager) with External Secrets Operator in Kubernetes
-- SLSA framework measures supply chain trust level
-- Sign images with Cosign; enforce signatures at admission with Kyverno/Gatekeeper
-- OPA/Gatekeeper enforces security policies at Kubernetes admission time
-- GitOps: Git is the single source of truth; ArgoCD/Flux ensures cluster matches
-- Principle of least privilege: CI service accounts can update deployments, not everything
-- Test rollback procedure — not just deploy procedure
+- Rolling updates depend on readiness probes.
+- Canary depends on observability quality.
+- GitOps depends on healthy controllers and RBAC.
+- Secret managers depend on IAM/workload identity.
+- Multi-region rollout should sequence blast radius.
 
-## What to Study Next
+---
 
-- [Delivery Systems: Jenkins, GitHub Actions, and ArgoCD](./delivery-systems-jenkins-github-actions-and-argocd) — deep dive on the tools
-- [Terraform and Infrastructure as Code](./terraform-infrastructure-as-code) — IaC in CI/CD pipelines
-- [YAML and Kubernetes Manifest Design](./yaml-and-kubernetes-manifest-design) — Kubernetes manifests in GitOps repos
+## Hands-On Drill
+
+Take one service and design:
+
+1. CI stages under 10 minutes.
+2. Security gates.
+3. Artifact signing.
+4. Canary rollout with rollback rule.
+5. GitOps promotion flow.
+
+Then explain why each step exists.
+
+---
+
+## Interview Answer Shape
+
+If asked, “How would you design a safe deployment platform?” a strong answer is:
+
+> I would optimize for fast feedback, strong trust, and easy recovery. Every change should pass lint, tests, scans, and produce an immutable signed artifact. Production rollout would use progressive delivery such as canary or blue-green with automated metric checks. Desired state would live in Git and be reconciled by ArgoCD or Flux. Secrets would come from a dedicated manager with least privilege identities. Most importantly, rollback must be faster than root-cause analysis.
+
+---
+
+## Recall Prompts
+
+- In the factory model, what is a registry?
+- Why is slow CI dangerous culturally?
+- When is canary better than blue-green?
+- Why pin image digests instead of mutable tags?
+- Why should rollback be faster than debugging?
+
+---
+
+## What To Study Next
+
+- Delivery systems: Jenkins, GitHub Actions, and ArgoCD
+- Terraform and Infrastructure as Code
+- YAML and Kubernetes manifest design
+- Git and version control for platform engineers
