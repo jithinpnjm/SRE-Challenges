@@ -1,554 +1,431 @@
-# Bash and Shell Scripting for SRE
+# Foundations: Bash Zero To Hero For SRE And Platform Engineers
 
-> Shell is the first tool you reach for in production. It is the glue between commands, the language of automation, and the medium of on-call incident response. Knowing Bash well is non-negotiable for any senior SRE role.
+Bash is the control language of Linux systems. It glues commands together, automates repetitive work, and helps you debug production quickly.
 
----
+If Linux is the operating foundation, Bash is the hand tool you carry every day.
 
-## What Is Bash?
+This guide is designed as a complete path:
 
-Bash (Bourne Again Shell) is both a command-line interpreter and a scripting language. It is the default shell on almost every Linux system. When you run commands interactively at a terminal or write a `.sh` script, you are using Bash.
-
-**Why SREs need deep Bash knowledge:**
-- Most runbooks are Bash scripts
-- One-liners diagnose production problems in seconds
-- Automation tasks (cleanup jobs, health checks, data exports) are often simplest in Bash
-- Understanding Bash prevents dangerous mistakes (accidental deletion, silent failures)
+- Beginner: terminal fluency and safe shell usage
+- Intermediate: pipes, text processing, scripting fundamentals
+- Advanced: robust automation, traps, parallelism, production safety
+- SRE Level: outage one-liners, triage workflows, runbook scripting
+- Interview Level: when to use Bash vs Python and how to reason clearly
 
 ---
 
-## Mental Model
+# Part 1: What Bash Actually Is
 
-Think of Bash as a meta-language that orchestrates other programs. Unlike Python, which is a complete programming language, Bash's primary purpose is composing Unix tools via pipes and redirection.
+Bash (Bourne Again Shell) is both:
 
+1. an interactive shell
+2. a scripting language
+
+It primarily orchestrates other programs.
+
+```text
+stdin (0)  -> input
+stdout (1) -> normal output
+stderr (2) -> errors
+exit code  -> success/failure signal
 ```
-Every command has:
-  - stdin (fd 0)   — input
-  - stdout (fd 1)  — normal output
-  - stderr (fd 2)  — error output
-  - exit code       — 0=success, non-zero=failure
 
-Pipes connect stdout of one command to stdin of the next.
+Unix philosophy:
+
+> Small tools that do one thing well, combined with pipes.
+
+---
+
+# Part 2: Beginner Terminal Fluency
+
+## Navigation
+
+```bash
+pwd
+ls -lah
+cd /path
+mkdir demo
+touch file.txt
+cp a b
+mv a b
+rm file.txt
+```
+
+## Reading Files
+
+```bash
+cat file
+less file
+head -20 file
+tail -50 file
+tail -f /var/log/app.log
+```
+
+## Help Yourself Fast
+
+```bash
+man grep
+command --help
+which kubectl
+type cd
+history
 ```
 
 ---
 
-## Part 1: Shell Fundamentals (Beginner)
+# Part 3: Variables, Quoting, Expansion
 
-### Safe Script Header
+## Variables
 
-Every production Bash script should start with:
+```bash
+name="cluster-a"
+count=3
+echo "$name"
+```
+
+## Always Quote Variables
+
+```bash
+echo "$name"   # safe
+echo $name     # risky if spaces/globs exist
+```
+
+## Command Substitution
+
+```bash
+pods=$(kubectl get pods --no-headers | wc -l)
+now=$(date +%F-%H%M)
+```
+
+## Defaults
+
+```bash
+env=${ENV:-dev}
+port=${PORT:=8080}
+```
+
+## Arithmetic
+
+```bash
+x=$((2 + 3))
+((x++))
+```
+
+---
+
+# Part 4: Safe Script Foundation
+
+Every serious script should begin with:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
 ```
 
-What each option does:
-- `set -e` — exit immediately if any command returns non-zero exit code
-- `set -u` — treat unset variables as an error (prevents `$UNDEFINED` expanding to empty)
-- `set -o pipefail` — a pipeline fails if any command in it fails (not just the last one)
-- `IFS=$'\n\t'` — changes Internal Field Separator so word splitting only happens on newline/tab, not spaces (prevents splitting file names with spaces)
+## Why
 
-**Why this matters:** Without `set -euo pipefail`, a script can silently skip failures and continue to potentially destructive actions.
+- `-e` stop on errors
+- `-u` fail on unset vars
+- `pipefail` catches pipeline failures
+- safer word splitting
 
-### Variables and Quoting
+Without this, scripts can silently continue after failures.
 
-```bash
-# Assignment — no spaces around =
-name="production-cluster"
-count=42
+---
 
-# ALWAYS quote variables to prevent word splitting and globbing
-echo "$name"           # correct
-echo $name             # dangerous: word-splits on spaces, expands * globs
+# Part 5: Conditionals And Loops
 
-# Command substitution
-nodes=$(kubectl get nodes --no-headers | wc -l)
-date_str=$(date +%Y%m%d-%H%M%S)
-
-# Arithmetic
-total=$((count * 2))
-((count++))
-
-# Default values
-env=${ENVIRONMENT:-production}     # use "production" if ENVIRONMENT is unset
-port=${PORT:=8080}                 # set PORT to 8080 if unset, and use it
-
-# String operations
-filename="backup-2024-01-15.tar.gz"
-base="${filename%.tar.gz}"         # remove suffix: "backup-2024-01-15"
-dir="${filename%/*}"               # remove after last /
-ext="${filename##*.}"              # extract extension: "gz"
-upper="${filename^^}"              # uppercase
-lower="${filename,,}"              # lowercase
-```
-
-### Arrays
+## Conditionals
 
 ```bash
-# Declare array
-hosts=("web-01" "web-02" "web-03")
-
-# Iterate
-for host in "${hosts[@]}"; do
-  echo "Checking $host"
-done
-
-# Length
-echo "${#hosts[@]}"
-
-# Append
-hosts+=("web-04")
-
-# Slice
-echo "${hosts[@]:1:2}"   # elements 1 and 2: "web-02 web-03"
-
-# Associative array (hash map)
-declare -A health
-health["web-01"]="ok"
-health["web-02"]="degraded"
-
-for host in "${!health[@]}"; do
-  echo "$host: ${health[$host]}"
-done
-```
-
-### Conditionals
-
-```bash
-# String tests
-if [[ "$env" == "production" ]]; then
-  echo "production mode"
+if [[ -f /etc/hosts ]]; then
+  echo exists
 fi
 
-if [[ -z "$token" ]]; then         # -z = empty string
-  echo "token is required" >&2
-  exit 1
+if [[ "$env" == "prod" ]]; then
+  echo production
 fi
 
-if [[ -n "$debug" ]]; then         # -n = non-empty string
-  set -x                           # trace mode
-fi
-
-# File tests
-if [[ -f /etc/resolv.conf ]]; then   # -f = file exists
-  echo "DNS config present"
-fi
-
-if [[ -d /var/log/myapp ]]; then     # -d = directory exists
-  ls /var/log/myapp
-fi
-
-if [[ ! -r /etc/ssl/cert.pem ]]; then  # ! = not, -r = readable
-  echo "Certificate not readable" >&2
-  exit 1
-fi
-
-# Numeric tests
-if [[ $count -gt 10 ]]; then        # -gt -lt -eq -ne -ge -le
-  echo "High count: $count"
-fi
-
-# Pattern matching
-if [[ "$region" == us-* ]]; then    # glob pattern
-  echo "US region"
-fi
-
-if [[ "$input" =~ ^[0-9]+$ ]]; then  # regex
-  echo "Input is a positive integer"
+if [[ $count -gt 10 ]]; then
+  echo high
 fi
 ```
 
-### Loops
+## Loops
 
 ```bash
-# For loop over list
-for region in us-east-1 us-west-2 eu-west-1; do
-  echo "Deploying to $region"
+for host in web1 web2 web3; do
+  echo "$host"
 done
 
-# For loop with range
-for i in {1..10}; do
-  echo "Item $i"
+for i in {1..5}; do
+  echo "$i"
 done
 
-# C-style for loop
-for ((i=0; i<10; i++)); do
-  echo "Index $i"
-done
-
-# While loop
-while [[ $(kubectl get nodes --no-headers | grep -c NotReady) -gt 0 ]]; do
-  echo "Waiting for nodes..."
-  sleep 10
-done
-
-# Read lines from file or command
-while IFS= read -r line; do
-  echo "Processing: $line"
-done < /etc/hosts
-
-# Read lines from command output
-kubectl get pods --no-headers | while IFS= read -r line; do
-  pod=$(awk '{print $1}' <<< "$line")
-  status=$(awk '{print $3}' <<< "$line")
-  echo "$pod is $status"
-done
-```
-
-### Functions
-
-```bash
-# Define a function
-log() {
-  # Always write log to stderr so it doesn't pollute stdout data
-  printf '[%s] %s\n' "$(date -Is)" "$*" >&2
-}
-
-die() {
-  log "ERROR: $*"
-  exit 1
-}
-
-require_command() {
-  local cmd="$1"
-  command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
-}
-
-# Use the functions
-require_command kubectl
-require_command jq
-log "Starting deployment"
+while read -r line; do
+  echo "$line"
+done < file.txt
 ```
 
 ---
 
-## Part 2: Data Processing (Intermediate)
-
-### Text Processing Toolkit
+# Part 6: Functions
 
 ```bash
-# grep — search text
-grep "ERROR" /var/log/app.log
-grep -E "ERROR|WARN" /var/log/app.log    # extended regex
-grep -v "DEBUG" /var/log/app.log         # invert match (exclude DEBUG)
-grep -c "ERROR" /var/log/app.log         # count matching lines
-grep -n "ERROR" /var/log/app.log         # show line numbers
-grep -r "password" /etc/                  # recursive search
-grep -l "password" /etc/*.conf           # only filenames with match
+log(){ printf '[%s] %s\n' "$(date -Is)" "$*" >&2; }
 
-# awk — column processing
-awk '{print $1, $3}' access.log          # print columns 1 and 3
-awk 'NR>1 {print $1}' data.csv           # skip header, print column 1
-awk -F: '{print $1}' /etc/passwd         # custom delimiter, print usernames
-awk '$5 > 1000 {print $1, $5}' data      # filter rows where col 5 > 1000
-awk '{sum += $3} END {print sum}' data   # sum column 3
+die(){ log "ERROR: $*"; exit 1; }
 
-# sed — stream edit
-sed 's/old/new/g' file.txt               # replace all
-sed -i 's/old/new/g' file.txt            # in-place replace
-sed -n '10,20p' file.txt                 # print lines 10-20
-sed '/^#/d' config.conf                  # delete comment lines
-
-# sort and uniq
-sort -k2 -n data.txt                     # sort by column 2, numeric
-sort -t: -k3 -n /etc/passwd              # sort by UID
-sort data.txt | uniq -c | sort -rn       # frequency count, sorted
-sort -u data.txt                         # unique lines
-
-# cut — extract columns
-cut -d: -f1,3 /etc/passwd               # fields 1 and 3 with : delimiter
-cut -c1-10 file.txt                     # first 10 characters
-
-# tr — translate/delete characters
-tr '[:lower:]' '[:upper:]' <<< "hello"  # uppercase
-tr -d '\r' < windows-file.txt           # remove carriage returns
-tr -s ' ' <<< "too  many   spaces"      # squeeze repeated spaces
-
-# head and tail
-head -n 20 file.txt                     # first 20 lines
-tail -n 50 file.txt                     # last 50 lines
-tail -f /var/log/app.log                # follow in real time
-tail -f /var/log/app.log | grep ERROR   # follow and filter
+require(){ command -v "$1" >/dev/null || die "missing $1"; }
 ```
 
-### JSON Processing with jq
+Use functions to keep scripts readable and reusable.
+
+---
+
+# Part 7: Pipes And Text Processing (Intermediate)
+
+## grep
 
 ```bash
-# Basic field extraction
+grep ERROR app.log
+grep -E 'ERROR|WARN' app.log
+grep -c ERROR app.log
+```
+
+## awk
+
+```bash
+awk '{print $1}' file
+awk -F: '{print $1}' /etc/passwd
+awk '{sum+=$3} END {print sum}' data
+```
+
+## sed
+
+```bash
+sed 's/old/new/g' file
+sed -n '1,20p' file
+```
+
+## sort / uniq
+
+```bash
+sort file | uniq -c | sort -rn
+```
+
+## cut / tr
+
+```bash
+cut -d: -f1 /etc/passwd
+tr '[:lower:]' '[:upper:]'
+```
+
+---
+
+# Part 8: JSON And APIs
+
+Modern ops uses JSON everywhere.
+
+## jq
+
+```bash
 kubectl get pods -o json | jq '.items[].metadata.name'
+curl -s api.example.com | jq '.status'
+```
 
-# Filter array
-kubectl get pods -o json | jq '.items[] | select(.status.phase == "Running")'
+## API Checks
 
-# Extract multiple fields
-kubectl get pods -o json | jq '.items[] | {name: .metadata.name, phase: .status.phase}'
-
-# Count
-kubectl get pods -o json | jq '[.items[] | select(.status.phase != "Running")] | length'
-
-# Aggregate
-kubectl get pods -o json | jq '[.items[].status.phase] | group_by(.) | map({phase: .[0], count: length})'
-
-# Nested selection
-kubectl get nodes -o json | jq '.items[] | {
-  name: .metadata.name,
-  gpus: .status.allocatable["nvidia.com/gpu"]
-}'
+```bash
+curl -I https://example.com
+curl -vk https://example.com/health
+curl -s https://api.example.com | jq .
 ```
 
 ---
 
-## Part 3: Production Patterns (Advanced)
+# Part 9: Production Bash Patterns (Advanced)
 
-### Error Handling and Traps
+## Traps / Cleanup
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Cleanup on exit
-cleanup() {
-  local exit_code=$?
-  log "Script exiting with code $exit_code"
-  # Remove temp files
-  rm -f /tmp/deploy-lock-$$
-  # Notify on failure
-  if [[ $exit_code -ne 0 ]]; then
-    echo "Deployment FAILED: $0 exited with code $exit_code" | mail -s "Deploy Failure" ops@company.com
-  fi
-}
+cleanup(){ rm -f "$tmp"; }
 trap cleanup EXIT
-
-# Trap specific signals
-trap 'die "Interrupted"' INT TERM
-
-# Create temp files safely (cleaned up by trap)
-tmpfile=$(mktemp /tmp/deploy.XXXXXX)
-log "Using temp file: $tmpfile"
 ```
 
-### Idempotent Scripts
-
-Scripts that can be run multiple times without harm:
+## Retry With Backoff
 
 ```bash
-# Create directory only if it doesn't exist
-mkdir -p /opt/myapp/config
-
-# Copy file only if it's changed
-if ! diff -q /etc/myapp/config.conf /opt/myapp/config/config.conf &>/dev/null; then
-  cp /etc/myapp/config.conf /opt/myapp/config/config.conf
-  log "Config updated"
-fi
-
-# Install package only if not already installed
-if ! rpm -q mypackage &>/dev/null; then
-  yum install -y mypackage
-fi
-
-# Apply kubectl config only if different
-kubectl apply --dry-run=client -f deployment.yaml | grep -q "configured" && \
-  kubectl apply -f deployment.yaml || log "No changes needed"
-```
-
-### Retry with Backoff
-
-```bash
-retry() {
-  local -r cmd="$1"
-  local -r max_attempts="${2:-3}"
-  local -r base_delay="${3:-2}"
-  local attempt=0
-
-  until eval "$cmd"; do
-    ((attempt++))
-    if [[ $attempt -ge $max_attempts ]]; then
-      log "Command failed after $max_attempts attempts: $cmd"
-      return 1
-    fi
-    local delay=$(( base_delay * (2 ** (attempt - 1)) ))
-    log "Attempt $attempt/$max_attempts failed. Retrying in ${delay}s..."
-    sleep "$delay"
-  done
-}
-
-# Usage
-retry "curl -sf https://api.example.com/health" 5 1
-retry "kubectl rollout status deployment/myapp --timeout=300s" 3 10
-```
-
-### Safe Deletion Patterns
-
-```bash
-# DRY RUN: always show what would be deleted before deleting
-find /var/log/myapp -name "*.log" -mtime +30 -print    # list candidates
-# Verify output looks right, then:
-find /var/log/myapp -name "*.log" -mtime +30 -delete   # actually delete
-
-# Never do this in production:
-# rm -rf /var/data/$env/*   # what if $env is empty?
-
-# Safe approach with variable validation:
-[[ -n "$env" ]] || die "ENVIRONMENT variable is required"
-[[ "$env" =~ ^(dev|staging|production)$ ]] || die "Invalid environment: $env"
-target_dir="/var/data/$env"
-[[ -d "$target_dir" ]] || die "Directory does not exist: $target_dir"
-rm -rf "${target_dir:?}/cache"    # :? fails if var is empty/unset
-```
-
-### Parallel Execution
-
-```bash
-# Run commands in parallel with background jobs
-for host in web-01 web-02 web-03; do
-  {
-    result=$(ssh "$host" "uptime")
-    echo "$host: $result"
-  } &
+for i in 1 2 3; do
+  curl -sf https://api && break
+  sleep $((i*2))
 done
-wait    # wait for all background jobs
+```
 
-# Parallel with controlled concurrency (max 5 at a time)
-parallel_limit=5
-active=0
-for pod in $(kubectl get pods -o name); do
-  kubectl logs "$pod" --since=1h &
-  ((active++))
-  if [[ $active -ge $parallel_limit ]]; then
-    wait -n 2>/dev/null || wait    # wait for at least one to finish
-    ((active--))
-  fi
+## Idempotency
+
+```bash
+mkdir -p /opt/app
+cp -n config /opt/app/
+```
+
+## Temp Files
+
+```bash
+tmp=$(mktemp)
+```
+
+## Safe Deletes
+
+```bash
+[[ -n "$target" ]] || exit 1
+rm -rf "${target:?}/cache"
+```
+
+---
+
+# Part 10: Parallelism And Speed
+
+```bash
+cmd1 &
+cmd2 &
+wait
+```
+
+Run host checks in parallel carefully.
+
+```bash
+for host in a b c; do
+  ssh "$host" uptime &
 done
 wait
-
-# GNU parallel (if available)
-kubectl get pods -o name | parallel -j5 kubectl logs {} --since=1h
 ```
 
 ---
 
-## Part 4: Common SRE One-Liners
+# Part 11: SRE One-Liners
+
+## Top Disk Usage
 
 ```bash
-# Top 10 largest files in a directory
-find /var/log -type f -printf '%s\t%p\n' | sort -rn | head -10
+du -sh /var/* | sort -rh | head
+```
 
-# Count unique IPs in nginx access log
-awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -20
+## Count HTTP Status Codes
 
-# Count HTTP status codes in access log
-awk '{print $9}' /var/log/nginx/access.log | sort | uniq -c | sort -rn
+```bash
+awk '{print $9}' access.log | sort | uniq -c | sort -rn
+```
 
-# Find processes using most open file descriptors
-for pid in /proc/[0-9]*/fd; do
-  count=$(ls "$pid" 2>/dev/null | wc -l)
-  echo "$count $pid"
-done | sort -rn | head -10
+## Top Client IPs
 
-# Check if a port is open on remote hosts
-for host in web-{01..05}; do
-  timeout 2 bash -c "echo >/dev/tcp/$host/443" 2>/dev/null && \
-    echo "$host:443 OPEN" || echo "$host:443 CLOSED"
-done
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -rn | head
+```
 
-# Watch a metric in real time
-watch -n 5 'kubectl top pods -n production | sort -k2 -rn | head -15'
+## Watch Pods
 
-# Find and kill processes matching a pattern (WITH CONFIRMATION)
-pids=$(pgrep -f "defunct-worker")
-echo "Will kill PIDs: $pids"
-read -rp "Confirm? [y/N] " confirm
-[[ "$confirm" == "y" ]] && kill $pids
+```bash
+watch -n 5 'kubectl get pods -A'
+```
 
-# Disk usage by directory, sorted
-du -sh /var/log/* | sort -rh | head -20
+## Socket States
 
-# Count connections per state
-ss -tan | awk 'NR>1 {print $1}' | sort | uniq -c | sort -rn
-
-# Watch log for errors in real time
-tail -f /var/log/app.log | grep --line-buffered -E 'ERROR|FATAL|panic'
+```bash
+ss -tan | awk 'NR>1 {print $1}' | sort | uniq -c
 ```
 
 ---
 
-## Part 5: Interview Challenges
+# Part 12: When Bash vs Python?
 
-### Challenge 1: Health Checker
+## Use Bash When:
 
-Write a script that:
-- Takes a list of hosts and a port as arguments
-- Checks TCP reachability for each host
-- Prints a timestamped pass/fail line per host
-- Exits with non-zero if any host fails
+- chaining commands
+- quick automation
+- file/log processing
+- deployment glue
+- system admin tasks
+
+## Use Python When:
+
+- complex logic
+- large data structures
+- APIs with auth flows
+- maintainable tooling
+- long-term applications
+
+Senior engineers know when to stop using Bash.
+
+---
+
+# Part 13: Real Incident Stories
+
+## Log Disk Full
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-check_tcp() {
-  local host="$1"
-  local port="$2"
-  local timeout="${3:-3}"
-  if timeout "$timeout" bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
-    printf '[%s] PASS %s:%s\n' "$(date -Is)" "$host" "$port"
-    return 0
-  else
-    printf '[%s] FAIL %s:%s\n' "$(date -Is)" "$host" "$port" >&2
-    return 1
-  fi
-}
-
-usage() {
-  echo "Usage: $0 <port> <host1> [host2 ...]" >&2
-  exit 1
-}
-
-[[ $# -lt 2 ]] && usage
-port="$1"; shift
-
-failed=0
-for host in "$@"; do
-  check_tcp "$host" "$port" || failed=1
-done
-
-exit "$failed"
+find /var/log -type f -size +500M
+lsof +L1
 ```
 
-### Challenge 2: Log Summarizer
+## Service Down On Many Hosts
 
 ```bash
-#!/usr/bin/env bash
-# Summarize NGINX access log: top endpoints and top IPs with 5xx errors
-set -euo pipefail
+for h in app1 app2 app3; do ssh "$h" systemctl status myapp; done
+```
 
-log="${1:-/var/log/nginx/access.log}"
-[[ -f "$log" ]] || { echo "File not found: $log" >&2; exit 1; }
+## API Returning 500
 
-echo "=== Top 10 Endpoints by Request Count ==="
-awk '{print $7}' "$log" | cut -d? -f1 | sort | uniq -c | sort -rn | head -10
-
-echo ""
-echo "=== Top 10 IPs with 5xx Errors ==="
-awk '$9 ~ /^5/ {print $1}' "$log" | sort | uniq -c | sort -rn | head -10
+```bash
+curl -vk https://api/health
+tail -f /var/log/app.log
 ```
 
 ---
 
-## Points to Remember
+# Part 14: Interview Questions
 
-- `set -euo pipefail` on every script — without it, scripts continue past failures silently
-- Always quote `"$variables"` — unquoted variables expand in dangerous ways
-- `[[ ]]` over `[ ]` — double brackets support regex, safer string comparison
-- `trap cleanup EXIT` — ensures cleanup even when script fails
-- Never `rm -rf $var/*` without validating `$var` is non-empty
-- Use `/dev/tcp/host/port` for TCP checks without requiring `nc` or `curl`
-- `mktemp` for temp files — guaranteed unique names, cleaned up by `trap`
-- `>&2` to write errors to stderr — keeps stdout clean for piping
+- Why `set -euo pipefail`?
+- Why quote variables?
+- When should Bash be replaced by Python?
+- How would you safely run commands on 100 hosts?
+- How would you parse logs quickly during an outage?
 
-## What to Study Next
+---
 
-- [04-python-for-sre.md](./04-python-for-sre.md) — when to switch from Bash to Python
-- [05-linux-debug-playbook.md](./05-linux-debug-playbook.md) — apply these tools to real debugging
-- Hands-on labs: [../hands-on-labs/bash/](../hands-on-labs/bash/)
+# Part 15: Labs
+
+## Beginner
+
+- write a backup script
+- parse a CSV file
+- create users and folders
+
+## Intermediate
+
+- health-check multiple hosts
+- summarize nginx logs
+- monitor disk growth
+
+## Advanced
+
+- deploy script with rollback
+- parallel host executor
+- retry wrapper with backoff
+
+---
+
+# Part 16: Senior Answer Shape
+
+> I use Bash for fast, composable operational tasks close to the OS: command orchestration, deployment glue, diagnostics, and log processing. I make scripts safe with strict mode, quoting, traps, and idempotency. When logic becomes complex or long-lived, I move to Python for maintainability.
+
+---
+
+# Recall Prompts
+
+- Why is quoting variables important?
+- Why does pipefail matter?
+- When is awk better than grep?
+- Why use trap cleanup EXIT?
+- When should Bash become Python?
