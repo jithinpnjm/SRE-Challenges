@@ -1,458 +1,511 @@
-# Git and Version Control for Platform Engineers
+# Foundations: Git Zero To Hero For SRE And Platform Engineers
 
-## What It Is and Why It Matters
+Git is not just source control. For SRE and platform engineering, Git is the audit trail for infrastructure, the entry point for CI/CD, the source of truth for GitOps, and the safety net for recovering from bad changes.
 
-Git is the version control system used for virtually all software and infrastructure code. For platform engineers, Git is not just source control — it is the audit trail for infrastructure changes, the mechanism for change review, the trigger for CI/CD pipelines, and the source of truth in GitOps deployments.
+This guide is designed as a complete path:
 
-Understanding Git deeply — the object model, branching strategies, rebase vs merge, reflog and recovery, and how to structure clean commit histories for review — makes you effective at collaborative infrastructure work and enables you to recover from mistakes that would otherwise be catastrophic.
-
----
-
-## Mental Model: Git's Object Model
-
-Git stores everything as immutable content-addressed objects. There are four types:
-
-```
-Blob: file contents (identified by SHA-1 hash of contents)
-Tree: directory (list of blob/tree pointers with names and permissions)
-Commit: snapshot (tree pointer, parent commit, author, message)
-Tag: named reference to a commit (signed or unsigned)
-```
-
-A commit is not a diff — it's a snapshot of the entire repository state at a point in time. Git computes diffs on the fly by comparing trees. This is why `git show` is fast and why operations like `git rebase` can be thought of as replaying commits.
-
-```
-HEAD → main → commit C → commit B → commit A
-                          (tree)       (tree)
-                          (author)     (author)
-                          (message)    (message)
-```
-
-A branch is just a pointer (a 41-byte file) to a commit. Moving a branch is cheap — it's just updating a pointer.
+- Beginner: repositories, commits, branches, remotes
+- Intermediate: merges, rebases, PR workflows, conflict resolution
+- Advanced: object model, reflog, bisect, tags, recovery
+- SRE Level: IaC review, rollback, GitOps, release safety
+- Interview Level: explain tradeoffs and recover from mistakes calmly
 
 ---
 
-## Core Operations
+# Part 1: What Git Actually Is
 
-### Branching
+Git is a distributed version control system.
 
-```bash
-# Create and switch to a new branch
-git checkout -b feature/add-gpu-node-config
-# or (newer syntax)
-git switch -c feature/add-gpu-node-config
+It stores project history as snapshots.
 
-# List branches (local)
-git branch
+Core idea:
 
-# List all branches including remote
-git branch -a
-
-# Push branch to remote and set upstream
-git push -u origin feature/add-gpu-node-config
-
-# Delete local branch (after it's merged)
-git branch -d feature/add-gpu-node-config
-
-# Delete remote branch
-git push origin --delete feature/add-gpu-node-config
+```text
+working tree -> staging area -> commit history -> remote repository
 ```
 
-### Staging and Committing
+| Area | Meaning |
+|---|---|
+| Working tree | Files currently on disk |
+| Staging area / index | What will go into next commit |
+| Commit | Snapshot plus metadata |
+| Branch | Pointer to a commit |
+| Remote | Shared copy, often GitHub/GitLab |
+
+---
+
+# Part 2: Beginner Daily Workflow
+
+## Clone And Inspect
 
 ```bash
-# Stage specific files
-git add src/config.py tests/test_config.py
-
-# Stage part of a file (interactive hunk selection)
-git add -p src/config.py
-
-# Check what's staged
-git diff --staged
-
-# Commit
-git commit -m "Add GPU node labeling configuration
-
-- Add node feature labels for GPU type (A100 vs H100)
-- Validate against available driver versions
-- Add test coverage for edge cases"
-
-# Amend the last commit (before pushing)
-git commit --amend
-# or to just change the message
-git commit --amend -m "New message"
-```
-
-### Viewing History
-
-```bash
-# One-line log
+git clone https://github.com/org/repo.git
+cd repo
+git status
 git log --oneline --graph --decorate
+```
 
-# Detailed log for a file
-git log --follow -p path/to/file.py
+## Edit, Stage, Commit
 
-# Show a specific commit
-git show abc123
+```bash
+git status
+git diff
+git add file.md
+git diff --staged
+git commit -m "Explain Linux memory pressure"
+```
 
-# Who changed a line (blame)
-git blame path/to/file.py
+## Push And Pull
 
-# Search commit messages
-git log --grep="fix connection pool"
+```bash
+git push
+git pull
+```
 
-# Search for code addition/removal across history
-git log -S "connection_pool_size"   # commits that added or removed this string
+Use `git status` constantly. It is your dashboard.
+
+---
+
+# Part 3: Mental Model Of Commits
+
+A commit contains:
+
+- pointer to a tree snapshot
+- parent commit(s)
+- author
+- timestamp
+- message
+
+A commit is not only a patch. Git can compute patches by comparing snapshots.
+
+A branch is just a movable pointer.
+
+```text
+main -> C -> B -> A
+```
+
+Creating a branch is cheap because Git only creates a pointer.
+
+---
+
+# Part 4: Branching
+
+```bash
+git switch -c feature/networking-zero-hero
+git branch
+git push -u origin feature/networking-zero-hero
+```
+
+Good branch names:
+
+- `feature/add-linux-labs`
+- `fix/broken-pages-build`
+- `docs/networking-zero-hero`
+- `hotfix/pages-deploy`
+
+---
+
+# Part 5: Pull Requests And Code Review
+
+A good PR explains:
+
+- what changed
+- why it changed
+- how it was tested
+- rollback plan if relevant
+
+For infrastructure changes, always include blast radius.
+
+Example PR description:
+
+```markdown
+## What
+Increase API timeout from 2s to 5s.
+
+## Why
+Users in EU saw timeout spikes during dependency latency.
+
+## Testing
+Validated in staging with synthetic checks.
+
+## Rollback
+Revert this PR.
 ```
 
 ---
 
-## Merge vs Rebase
+# Part 6: Merge Vs Rebase
 
-### Merge
+## Merge
 
-Merge creates a new "merge commit" that has two parents, preserving the full history of both branches:
+Preserves branch history and creates a merge commit.
 
-```
-Before:
-    A - B - C  (main)
-         \
-          D - E  (feature)
+Best when:
 
-After: git merge feature (from main)
-    A - B - C - M  (main, M = merge commit)
-         \     /
-          D - E
-```
+- shared branch history must be preserved
+- many people worked on the branch
+- you want explicit integration history
 
-Preserves exact history — you can see exactly when branches were merged and what was in each. Merge commits can make `git log --graph` look cluttered.
+## Rebase
 
-### Rebase
+Replays commits onto a new base and rewrites commit hashes.
 
-Rebase replays your commits on top of another branch, rewriting them to have new parent commits:
+Best when:
 
-```
-Before:
-    A - B - C  (main)
-         \
-          D - E  (feature)
+- cleaning local feature branch before PR
+- keeping history linear
 
-After: git rebase main (from feature branch)
-    A - B - C - D' - E'  (feature, D' and E' are new commits with same changes)
-```
+Rule:
 
-Result is a linear history — looks like you wrote your feature after C, not branched from B. Cleaner log, easier to bisect.
-
-**The rebase rule:** Never rebase commits that have been pushed to a shared branch. Rebase rewrites commit hashes — if others have pulled your commits, their history diverges. Rebase is safe on your local feature branch; unsafe on `main` or any shared branch.
-
-### Interactive Rebase
-
-Interactive rebase lets you clean up a branch's history before merging:
-
-```bash
-# Rebase last 4 commits interactively
-git rebase -i HEAD~4
-
-# Editor opens with:
-# pick abc1234 Add GPU labeling
-# pick def5678 Fix typo
-# pick ghi9012 Add tests
-# pick jkl3456 WIP cleanup
-
-# Change to:
-# pick abc1234 Add GPU labeling
-# fixup def5678 Fix typo    ← squash into previous, discard message
-# pick ghi9012 Add tests
-# drop jkl3456 WIP cleanup  ← delete this commit entirely
-```
-
-Use interactive rebase to:
-- Squash WIP commits before PR
-- Reorder commits for logical grouping
-- Edit commit messages
-- Split one commit into multiple
+> Do not rebase shared public history unless the team explicitly agrees.
 
 ---
 
-## Branching Strategies
+# Part 7: Conflict Resolution
 
-### GitHub Flow (Simple, CI/CD-friendly)
+A conflict happens when Git cannot combine changes automatically.
 
-```
-main (protected, auto-deployed to prod)
-├── feature/add-monitoring
-├── fix/connection-timeout
-└── chore/update-dependencies
-```
+Conflict markers:
 
-- Every change goes through a PR against `main`
-- CI runs on every PR
-- Merge triggers deploy to production
-- Simple, works well for small teams with automated testing
-
-### Git Flow (Release-oriented)
-
-```
-main (production releases)
-develop (integration branch)
-├── feature/new-feature
-├── release/v2.3 (cut from develop, bug fixes only)
-└── hotfix/critical-fix (branches from main, merges to both main and develop)
+```text
+<<<<<<< HEAD
+current branch version
+=======
+other branch version
+>>>>>>> other-branch
 ```
 
-- More complex, appropriate for versioned products
-- Release branches allow stabilization while development continues
-- Hotfixes merge to both `main` and `develop`
-
-### Trunk-Based Development
-
-All developers commit to `main` directly (or via very short-lived branches). Feature flags hide incomplete features. Requires very strong CI and automated testing. Used at Google, Facebook, and other high-velocity organizations.
-
----
-
-## Recovery Operations
-
-### Undoing Changes
+Resolve by editing the file, then:
 
 ```bash
-# Undo last commit, keep changes staged
-git reset --soft HEAD~1
-
-# Undo last commit, keep changes unstaged (but still present)
-git reset --mixed HEAD~1   # (default for git reset HEAD~1)
-
-# Undo last commit, DISCARD changes (destructive)
-git reset --hard HEAD~1
-
-# Undo a specific commit by creating a reverting commit (safe, preserves history)
-git revert abc1234
-
-# Unstage a file (don't remove changes from disk)
-git restore --staged path/to/file.py
-
-# Discard changes in working directory
-git restore path/to/file.py   # WARNING: changes are lost
-```
-
-### Reflog — Your Safety Net
-
-`git reflog` records every change to HEAD, including commits, resets, rebases, and branch switches. It keeps entries for 90 days by default.
-
-```bash
-# Show all recent HEAD movements
-git reflog
-
-# Output:
-# abc1234 HEAD@{0}: commit: Add GPU labeling
-# def5678 HEAD@{1}: reset: moving to HEAD~1    ← that accidental reset
-# ghi9012 HEAD@{2}: commit: Add tests
-
-# Recover from accidental reset --hard
-git reset --hard def5678   # restore to the commit before the reset
+git add file
+git rebase --continue
 # or
-git checkout -b recovery-branch def5678
+git commit
 ```
 
-Reflog is why `git reset --hard` is recoverable (within 90 days) — the commits aren't deleted, just dereferenced. They become unreachable but still exist until garbage collected.
-
-### Stash
-
-```bash
-# Save uncommitted changes temporarily
-git stash
-
-# Save with a description
-git stash push -m "WIP: GPU node config"
-
-# List stashes
-git stash list
-
-# Apply most recent stash (keep it in stash list)
-git stash apply
-
-# Apply and remove from stash list
-git stash pop
-
-# Apply specific stash
-git stash apply stash@{2}
-
-# Drop a stash
-git stash drop stash@{0}
-```
+Do not blindly accept one side. Understand both changes.
 
 ---
 
-## Git for Platform and Infrastructure Work
+# Part 8: Undo And Recovery
 
-### Keeping Infrastructure as Code Clean
+## Undo Working Tree Changes
 
 ```bash
-# Good commit message for infra changes
-git commit -m "Increase connection pool size for checkout service
-
-Previous: 20 connections max
-New: 50 connections max
-
-Reason: checkout service hitting connection exhaustion during peak traffic
-(incident 2024-03-15). New value validated against DB max_connections=100
-with 3 other services also running.
-
-Fixes: https://internal.jira/PLAT-456"
-
-# Link to incident or ticket in commit message
-# Include "why" not just "what"
-# Include the impact of not making this change
+git restore file
 ```
 
-### Git Bisect
-
-Binary search through commit history to find when a bug was introduced:
+## Unstage
 
 ```bash
-# Start bisect
+git restore --staged file
+```
+
+## Revert A Commit Safely
+
+```bash
+git revert COMMIT_SHA
+```
+
+Use revert for shared branches because it preserves history.
+
+## Reset Local History
+
+```bash
+git reset --soft HEAD~1
+ git reset --mixed HEAD~1
+ git reset --hard HEAD~1
+```
+
+- soft: keep changes staged
+- mixed: keep changes unstaged
+- hard: discard working tree changes
+
+Be careful with hard reset.
+
+---
+
+# Part 9: Reflog — Your Safety Net
+
+`git reflog` records HEAD movements.
+
+```bash
+git reflog
+git checkout -b recovery HEAD@{3}
+```
+
+Use it after:
+
+- accidental reset
+- bad rebase
+- lost commits
+- detached HEAD mistakes
+
+Many “lost” commits are recoverable until garbage collection.
+
+---
+
+# Part 10: Stash
+
+```bash
+git stash push -m "wip linux edits"
+git stash list
+git stash apply
+git stash pop
+```
+
+Use stash when you need to switch context quickly.
+
+Do not use stash as permanent storage.
+
+---
+
+# Part 11: Tags And Releases
+
+```bash
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+```
+
+Tags are useful for:
+
+- releases
+- deployment markers
+- rollback references
+- audit trails
+
+Use annotated tags for important releases.
+
+---
+
+# Part 12: Git Bisect
+
+Use bisect to find the commit that introduced a bug.
+
+```bash
 git bisect start
-
-# Mark current commit as bad
 git bisect bad
-
-# Mark a known good commit
-git bisect good v1.2.0
-
-# Git checks out a midpoint commit
-# Test it: is it good or bad?
-git bisect good   # or: git bisect bad
-
-# Git keeps narrowing down
-# Eventually:
-# "abc1234 is the first bad commit"
-
-# See what that commit changed
-git show abc1234
-
-# End bisect
+git bisect good v1.0.0
+git bisect run ./test.sh
 git bisect reset
 ```
 
-Bisect with automated test:
+This is powerful for production regressions.
+
+---
+
+# Part 13: Git For SRE And Infrastructure
+
+Git controls:
+
+- Terraform changes
+- Kubernetes manifests
+- Helm charts
+- CI/CD workflows
+- runbooks
+- alert rules
+- dashboards as code
+
+For infrastructure commits, write why, not only what.
+
+Bad:
+
+```text
+Update values.yaml
+```
+
+Good:
+
+```text
+Increase checkout memory limit after OOM during peak traffic
+```
+
+---
+
+# Part 14: GitOps Mental Model
+
+GitOps means:
+
+```text
+Git desired state -> controller reconciles cluster -> drift corrected
+```
+
+Examples:
+
+- ArgoCD
+- Flux
+
+Important GitOps idea:
+
+> If it is not in Git, it should not be running in production.
+
+---
+
+# Part 15: Branching Strategies
+
+## GitHub Flow
+
+- branch from main
+- PR
+- CI
+- merge
+- deploy
+
+Best for most modern web/platform teams.
+
+## Git Flow
+
+- main
+- develop
+- release branches
+- hotfix branches
+
+Useful for versioned products, but heavier.
+
+## Trunk-Based Development
+
+- short-lived branches
+- frequent integration
+- feature flags
+- strong CI
+
+Best for high-performing teams with mature tests.
+
+---
+
+# Part 16: Common Production Mistakes
+
+## Accidentally Pushed To Main
+
+Use:
+
 ```bash
-# Automate the process
-git bisect run ./scripts/test-specific-behavior.sh
-# Git will run the script, which exits 0 for good, non-zero for bad
+git revert COMMIT_SHA
 ```
 
-### Tags
+Do not force-push main unless explicitly coordinated.
 
-```bash
-# Annotated tag (standard for releases, includes message, can be signed)
-git tag -a v2.3.0 -m "Release 2.3.0: Add GPU scheduling support"
+## Secret Committed
 
-# Lightweight tag (just a pointer to a commit)
-git tag v2.3.0-rc1
+Steps:
 
-# Push tags to remote
-git push origin v2.3.0
-git push --tags   # push all tags
+1. rotate secret immediately
+2. revoke old secret
+3. remove from history if needed
+4. audit access
 
-# List tags
-git tag -l "v2.*"
+Cleaning history does not make leaked secrets safe.
 
-# Show tag details
-git show v2.3.0
-```
+## Large File Committed
 
----
+Use Git LFS or remove from history with coordination.
 
-## GitHub/GitLab Workflow
+## Bad Rebase
 
-### Pull Request Best Practices
-
-A good PR:
-- Is focused: one logical change per PR
-- Has a clear description: what changed, why, testing done
-- References the issue or ticket
-- Has test coverage for the change
-- Passes all CI checks before requesting review
-- Is small enough to review in 20 minutes (under 400 lines of change where possible)
-
-```markdown
-## What this PR does
-Increases connection pool size for checkout service from 20 to 50.
-
-## Why
-Checkout service was hitting connection exhaustion during peak traffic.
-See incident report: https://internal.wiki/incidents/2024-03-15
-
-## Testing
-- Validated against db-staging with load test (3x current peak traffic)
-- Confirmed no other services affected (total connections 80 < max 100)
-- Load test results: P99 latency improved from 4s to 800ms
-
-## Rollback
-Revert this commit. Pool size change takes effect on next pod restart.
-```
-
-### Protected Branches
-
-For production-critical branches (`main`, release branches):
-- Require PR (no direct push)
-- Require CI to pass (all status checks green)
-- Require at least 1 reviewer approval
-- Require linear history (rebase before merge)
-- Restrict who can push (only CI service accounts for auto-merges)
+Use reflog.
 
 ---
 
-## Common Failure Modes
+# Part 17: Command Interpretation Table
 
-**Merge conflict on shared branch:** Two people edited the same file. Resolution: understand both sets of changes, reconcile them. Use `git mergetool` for complex conflicts. Don't blindly accept one side. After resolution: `git add <resolved-file>`, `git commit`.
-
-**Accidentally pushed to main:** Immediately stop further work. If the commit introduced a bug, revert it (`git revert` — creates a new commit, preserves history). Don't force-push to main — others may have already pulled. Coordinate with the team.
-
-**Lost commits after reset --hard:** Check `git reflog` immediately. The commits still exist until garbage collected. Create a new branch pointing to the reflog entry: `git checkout -b recovery HEAD@{3}`.
-
-**Large files committed to git:** Git is not designed for large binaries. Committing a 500MB model file makes every clone slow. Fix: `git rm --cached large-file.bin`, add to `.gitignore`, use Git LFS for large files. If it's in history: `git filter-repo --path large-file.bin --invert-paths` to remove from entire history (then force push — coordinate with team).
-
-**Diverged branches (non-fast-forward):** Remote has commits your branch doesn't, and vice versa. `git pull` with default merge creates a merge commit. To keep linear history: `git pull --rebase` replays your commits on top of the remote state.
-
----
-
-## Key Questions and Answers
-
-**Q: What is the difference between git merge and git rebase?**
-
-Merge creates a merge commit joining two branch tips, preserving full history of both. Rebase replays commits from one branch onto another, rewriting commit hashes to create a linear history. Merge is safer for shared branches (history is preserved and never rewritten). Rebase creates cleaner history for feature branches before merging. The key rule: never rebase commits already pushed to a shared branch — it rewrites history and causes conflicts for anyone who has pulled those commits.
-
-**Q: How do you recover from an accidental `git reset --hard`?**
-
-Git doesn't immediately delete commits — it just moves the branch pointer. The commits become "unreachable" but still exist. Use `git reflog` to find the commit you want to recover: it shows every HEAD movement. Then `git reset --hard HEAD@{N}` to restore to that point. This works because reflog keeps entries for 90 days. After that, unreachable commits are garbage collected.
-
-**Q: What is a detached HEAD state and how do you get out of it?**
-
-Detached HEAD means HEAD points directly to a commit, not to a branch. Any commits you make in this state aren't tracked by any branch — they'll be garbage collected eventually. How you get there: `git checkout abc1234` (checking out a specific commit), `git checkout v2.0.0` (checking out a tag). To get out: if you made commits you want to keep, `git checkout -b new-branch` to create a branch at current position. If you just want to go back: `git checkout main`.
-
-**Q: How does git handle conflicts during rebase?**
-
-During rebase, Git replays commits one by one. When it encounters a conflict on a specific commit, it stops and lets you resolve it. Files with conflicts are marked with `<<<<<<<`, `=======`, `>>>>>>>` markers. Resolve the conflict, `git add` the resolved file, then `git rebase --continue`. If you want to abort and return to the state before rebase: `git rebase --abort`. Unlike merge where you resolve everything at once, rebase may require resolving conflicts for each commit in sequence.
+| Command | What it answers | SRE use |
+|---|---|---|
+| `git status` | What changed locally? | daily safety check |
+| `git diff` | What did I modify? | review before staging |
+| `git diff --staged` | What will commit? | avoid accidental commits |
+| `git log --oneline --graph` | What happened? | understand branch history |
+| `git blame file` | Who changed this line? | incident investigation |
+| `git show SHA` | What did one commit change? | audit/review |
+| `git revert SHA` | Undo safely | rollback shared history |
+| `git reflog` | Where did HEAD move? | recover mistakes |
+| `git bisect` | Which commit broke it? | regression debugging |
 
 ---
 
-## Points to Remember
+# Part 18: Real Incident Stories
 
-- Git objects: blob (file), tree (directory), commit (snapshot with parent pointer), tag
-- A branch is a pointer to a commit — cheap to create, no copying
-- Merge preserves history; rebase rewrites history for linear log
-- Never rebase commits that have been pushed to a shared branch
-- Interactive rebase (`-i`) for cleaning up commit history before PR
-- `git reflog` records all HEAD movements — your safety net for recovery
-- `git reset --hard` is recoverable within 90 days via reflog
-- `git stash` for temporary work-in-progress storage
-- `git bisect` for binary-search debugging of when a bug was introduced
-- Commit messages: what + why, not just what; reference tickets/incidents
-- Protected branches: require PR, status checks, approval before merge
-- Force-push to `main` is almost always wrong — use `git revert` instead
+## Bad Config Merged
 
-## What to Study Next
+Symptom:
 
-- [CI/CD and Trusted Delivery](./cicd-trusted-delivery-and-platform-security) — how Git drives CI/CD pipelines
-- [Delivery Systems: Jenkins, GitHub Actions, ArgoCD](./delivery-systems-jenkins-github-actions-and-argocd) — GitOps with ArgoCD
-- [Terraform and Infrastructure as Code](./terraform-infrastructure-as-code) — IaC in version-controlled repos
+- production error rate spikes after config PR
+
+Action:
+
+- identify commit
+- revert
+- confirm recovery
+- inspect test gap
+
+## Terraform Destroy Appears In PR
+
+Action:
+
+- block merge
+- review plan
+- inspect lifecycle/protection
+- split risky change
+
+## GitOps Drift
+
+Symptom:
+
+- manual cluster change disappears
+
+Explanation:
+
+- controller reconciled back to Git desired state
+
+---
+
+# Part 19: Interview Questions
+
+- What is a branch in Git?
+- Merge vs rebase?
+- How do you recover from reset hard?
+- Why is force-pushing main dangerous?
+- How would you find which commit introduced a production bug?
+- What makes a good infrastructure commit?
+- How does GitOps use Git differently from normal source control?
+
+---
+
+# Part 20: Labs
+
+## Beginner
+
+- create repo
+- make commits
+- create branch
+- open PR
+
+## Intermediate
+
+- resolve merge conflict
+- squash commits
+- rebase feature branch
+- tag a release
+
+## Advanced
+
+- recover lost commit with reflog
+- find regression with bisect
+- remove accidentally committed file
+- simulate GitOps rollback
+
+---
+
+# Part 21: Senior Answer Shape
+
+> I treat Git as the source of truth and audit trail for software and infrastructure. For shared branches I prefer safe history-preserving operations like revert. For local feature work I use rebase to keep reviewable history. I rely on protected branches, CI checks, meaningful commit messages, and PR review to control production change risk. If history is damaged, I use reflog and recovery branches before doing anything destructive.
+
+---
+
+# Recall Prompts
+
+- Why is a branch cheap in Git?
+- Why is revert safer than reset on main?
+- What does reflog record?
+- When is rebase appropriate?
+- Why does GitOps require discipline around manual changes?

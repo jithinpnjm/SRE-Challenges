@@ -1,462 +1,671 @@
-# Kubernetes for GPU and AI/ML Platforms
+# Foundations: Kubernetes GPU, AI Platforms, And Operators Zero To Hero
 
-> GPU and AI workloads on Kubernetes are not just "bigger pods." They require different scheduling strategies, different failure economics, different storage patterns, and different operational knowledge. This is the area that separates a cloud-native SRE from a GPU infrastructure engineer.
+GPU workloads on Kubernetes are not just larger Pods. They introduce scarce hardware, expensive scheduling mistakes, model cold starts, distributed training coordination, driver/runtime dependencies, high-performance networking, storage pressure, and deeper observability needs.
 
----
+This guide is designed as a complete path:
 
-## What Is It and Why It Matters
-
-Running AI/ML workloads on Kubernetes is a growing discipline. The challenges are:
-- **GPU is a scarce, expensive resource** — wrong scheduling wastes thousands of dollars/hour
-- **Distributed training requires all workers to start simultaneously** — partial allocation is useless
-- **GPU hardware fails** — a single bad GPU can idle an 8-GPU training job
-- **Inference platforms have strict latency SLOs** — model loading takes minutes on cold start
-- **AI teams expect HPC-style interfaces** — Slurm, MPI, SSH access to nodes
+- Beginner: what GPUs are and why AI workloads need them
+- Intermediate: GPU scheduling, device plugins, node labels, resource requests
+- Advanced: NVIDIA GPU Operator, MIG, topology, NCCL, Kueue/Volcano, operators
+- SRE Level: debug ImagePullBackOff, missing GPUs, OOM, bad nodes, slow training, inference latency
+- Interview Level: explain GPU platform design and operational tradeoffs clearly
 
 ---
 
-## Mental Model
+# Part 1: Why GPUs Matter For AI Platforms
 
-Think of GPU workloads in two categories with fundamentally different characteristics:
+GPUs accelerate parallel math. AI training and inference use large matrix and tensor operations that GPUs handle much faster than CPUs.
 
-**Training:** Long-running (hours to days), batch, fault-tolerant (with checkpointing), resource-intensive, network-intensive (all-reduce operations)
+Common workloads:
 
-**Inference:** Short-lived requests, latency-sensitive, stateless (mostly), memory-bound, requires warm capacity to avoid cold-start latency
+| Workload | Pattern | SRE concern |
+|---|---|---|
+| Training | long-running batch jobs | scheduling, checkpoints, failures, throughput |
+| Inference | online request serving | latency, warm capacity, model loading, autoscaling |
+| Batch inference | offline processing | throughput, cost, queueing |
+| Fine-tuning | smaller training jobs | quota, isolation, checkpointing |
+
+GPU mistakes are expensive because idle GPUs cost money even when no useful work happens.
 
 ---
 
-## Part 1: GPU Device Plugin — Exposing GPUs to Kubernetes
+# Part 2: Memory Palace — GPU Cluster As A Specialist Hospital Wing
 
-### How GPUs Appear in Kubernetes
+Think of a GPU cluster as a high-cost specialist wing in a hospital.
 
-Kubernetes has no native GPU concept. GPUs are exposed as **extended resources** via the Device Plugin framework.
+| GPU platform concept | Hospital analogy | Production meaning |
+|---|---|---|
+| GPU node | Specialist treatment room | expensive compute host |
+| GPU | specialist machine | scarce accelerator |
+| GPU memory | machine capacity | HBM/model/KV cache limit |
+| Device plugin | equipment registrar | exposes GPUs to kubelet |
+| GPU Operator | equipment operations team | installs drivers/runtime/exporters |
+| MIG | partitioned machine rooms | hardware GPU slicing |
+| Training job | long surgery | coordinated, long-running workload |
+| Inference service | emergency response desk | low-latency request serving |
+| Checkpoint | saved patient state | restart point for training |
+| DCGM exporter | equipment monitor | GPU metrics |
 
-**The lifecycle:**
-1. NVIDIA device plugin DaemonSet runs on every GPU node
-2. Plugin connects to kubelet via gRPC on `/var/lib/kubelet/device-plugins/nvidia.com_gpu.sock`
-3. Plugin discovers GPUs using NVML (NVIDIA Management Library)
-4. Plugin registers resource type `nvidia.com/gpu` with kubelet
-5. Kubelet advertises `nvidia.com/gpu: 8` in Node capacity (for 8-GPU node)
+---
+
+# Part 3: Kubernetes Has No Native GPU Magic
+
+Kubernetes sees GPUs as extended resources.
+
+The NVIDIA device plugin advertises GPUs to kubelet.
 
 ```bash
-# Check GPU capacity and allocatable on a node
-kubectl describe node <gpu-node> | grep -A 3 "Capacity\|Allocatable"
-# Expected:
-# Capacity:
-#   nvidia.com/gpu: 8
-# Allocatable:
-#   nvidia.com/gpu: 8
-
-# Check device plugin is running
-kubectl get pods -n kube-system | grep nvidia
-kubectl logs -n kube-system <nvidia-device-plugin-pod>
+kubectl describe node GPU_NODE | grep -A5 nvidia.com/gpu
+kubectl get nodes -L nvidia.com/gpu.product
+kubectl get pods -A -o wide
 ```
 
-### Requesting GPUs
+A Pod requests GPUs like this:
 
 ```yaml
-# Pod requesting a single GPU
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: training
-    image: nvcr.io/nvidia/pytorch:23.10-py3
-    resources:
-      limits:
-        nvidia.com/gpu: 1        # request exactly 1 GPU
-      # Note: GPU limits == GPU requests (no overcommit)
-      # Note: nvidia.com/gpu is NOT a CPU/memory — cannot use fractions
-
-# Pod requesting all 8 GPUs on a node (for single-node training)
 resources:
   limits:
-    nvidia.com/gpu: 8
-
-# Multi-GPU distributed training job (PyTorch DDP)
-# Each pod = 1 worker, runs on different nodes
+    nvidia.com/gpu: 1
 ```
 
-**Why GPU cannot be overcommitted:**
-Unlike CPU (which has time-slicing), GPU memory is physically allocated. If you request `nvidia.com/gpu: 1`, you get exclusive access to one physical GPU. There is no fractional GPU in the standard device plugin (though MIG — Multi-Instance GPU — provides hardware partitioning on H100).
+Important:
 
-### Node Feature Discovery (NFD)
+- standard GPU resources are not fractional
+- requests and limits are effectively the same for GPUs
+- scheduler places Pods only on nodes with enough allocatable GPUs
+- GPU allocation does not guarantee high utilization
 
-NFD scans node hardware and labels nodes with their capabilities:
+---
+
+# Part 4: Beginner GPU Pod
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: cuda
+      image: nvidia/cuda:12.2.0-base-ubuntu22.04
+      command: ["nvidia-smi"]
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+```
+
+Check:
 
 ```bash
-# GPU-related node labels added by NFD
-kubectl get node <node> -o json | jq '.metadata.labels | to_entries | map(select(.key | startswith("nvidia") or startswith("feature")))'
+kubectl logs gpu-test
+kubectl describe pod gpu-test
+```
 
-# Common labels:
-# nvidia.com/gpu.product: "NVIDIA-H100-80GB-HBM3"
-# nvidia.com/gpu.count: "8"
-# nvidia.com/gpu.memory: "81920"   # 80GB in MiB
-# nvidia.com/cuda.driver.major: "535"
-# feature.node.kubernetes.io/cpu-cpuid.AVX512F: "true"
-# feature.node.kubernetes.io/memory-numa: "true"
+If `nvidia-smi` fails, think driver/runtime/device-plugin path.
 
-# Use node labels in pod scheduling
+---
+
+# Part 5: GPU Platform Stack
+
+Typical stack:
+
+```text
+GPU hardware
+NVIDIA driver
+container runtime integration
+NVIDIA device plugin
+kubelet extended resources
+scheduler placement
+Pod uses GPU
+DCGM exporter exposes metrics
+```
+
+Failure at any layer can make GPUs unavailable.
+
+---
+
+# Part 6: NVIDIA GPU Operator
+
+The GPU Operator automates GPU node setup.
+
+It can manage:
+
+- NVIDIA drivers
+- container toolkit
+- device plugin
+- DCGM exporter
+- MIG manager
+- node feature discovery
+- validator jobs
+
+Check operator components:
+
+```bash
+kubectl get pods -n gpu-operator
+kubectl get clusterpolicy
+kubectl logs -n gpu-operator deploy/gpu-operator
+```
+
+Useful question:
+
+> Are GPUs missing because hardware is missing, driver failed, device plugin failed, or kubelet did not advertise allocatable resources?
+
+---
+
+# Part 7: Node Labels, Taints, And Scheduling
+
+GPU nodes should be labeled.
+
+```bash
+kubectl get nodes --show-labels | grep nvidia
+```
+
+Common labels:
+
+- `nvidia.com/gpu.product`
+- `nvidia.com/gpu.count`
+- `nvidia.com/cuda.driver.major`
+- `feature.node.kubernetes.io/pci-10de.present`
+
+Schedule to a specific GPU type:
+
+```yaml
 nodeSelector:
   nvidia.com/gpu.product: "NVIDIA-H100-80GB-HBM3"
 ```
 
----
+Use taints to protect GPU nodes:
 
-## Part 2: Topology-Aware Scheduling
+```bash
+kubectl taint nodes gpu-node dedicated=gpu:NoSchedule
+```
 
-### Why Placement Matters
-
-GPU-to-GPU communication bandwidth varies enormously based on physical placement:
-
-| Communication Path | Bandwidth | Latency |
-|-------------------|-----------|---------|
-| Same GPU (memory) | 2 TB/s | nanoseconds |
-| Same node via NVLink (H100) | 900 GB/s bidirectional | microseconds |
-| Same server via PCIe | ~64 GB/s | microseconds |
-| Cross-node via InfiniBand (NDR800) | ~100 GB/s | 3–5 µs |
-| Cross-node via 100G Ethernet | ~12 GB/s | 20–80 µs |
-
-**For training:** Place all workers in the same NVLink domain (same node or NVLink switch) if possible. InfiniBand for cross-node all-reduce.
-
-**For inference:** Placement is less critical (stateless), but NUMA affinity between CPU and GPU PCIe slot matters for model loading speed.
-
-### Kubernetes Topology Manager
+Then workloads need toleration:
 
 ```yaml
-# kubelet configuration on GPU nodes
-apiVersion: kubelet.config.k8s.io/v1beta1
-kind: KubeletConfiguration
-topologyManagerPolicy: best-effort
-# Options:
-# none: ignore NUMA topology (default, not recommended for GPU)
-# best-effort: try to align to NUMA but don't fail if impossible
-# restricted: only schedule if NUMA-aligned resources are available
-# single-numa-node: all resources must come from a single NUMA node
-
-topologyManagerScope: pod
-# pod: allocate all containers in the pod from same NUMA node
-# container: per-container allocation (less strict)
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: gpu
+    effect: NoSchedule
 ```
 
-### Gang Scheduling — The Core Problem
+---
 
-Distributed training requires ALL workers to start simultaneously. Without gang scheduling:
+# Part 8: MIG — Multi-Instance GPU
 
+MIG partitions supported GPUs into hardware-isolated slices.
+
+Useful when:
+
+- inference workloads do not need a full GPU
+- teams need isolation
+- you want better utilization
+
+Example resources may appear as:
+
+```text
+nvidia.com/mig-1g.10gb
+nvidia.com/mig-2g.20gb
 ```
-Job: 4 workers, each needs 8 GPUs (32 GPUs total)
-Cluster: 30 GPUs available, 2 being released by finishing job
+
+Tradeoffs:
+
+- better utilization
+- stronger isolation than software sharing
+- more scheduling complexity
+- not ideal for every training workload
+
+---
+
+# Part 9: Training Workloads
+
+Training characteristics:
+
+- long-running
+- expensive
+- needs checkpoints
+- may require many GPUs at once
+- network-heavy for distributed training
+
+Distributed training often uses:
+
+- PyTorch DDP
+- MPI
+- NCCL
+- Ray
+- Kubeflow Training Operator
+
+Important:
+
+> Partial allocation can waste huge GPU capacity.
+
+If a 4-worker training job needs 8 GPUs per worker, starting only 3 workers is usually useless.
+
+---
+
+# Part 10: Gang Scheduling And Queues
+
+Use Kueue or Volcano for all-or-nothing scheduling.
 
 Without gang scheduling:
-  - Scheduler places workers 1, 2, 3 (24 GPUs)
-  - Worker 4 cannot be placed (needs 8, only 6 available)
-  - Workers 1-3 sit idle WAITING
-  - If 2 more GPUs freed later: worker 4 placed
-  - Total wasted time: depends on how long you wait
-  - Meanwhile workers 1-3 are holding 24 GPUs doing NOTHING
 
-With gang scheduling (Kueue/Volcano):
-  - Job is queued until ALL 32 GPUs are available
-  - All 4 workers start simultaneously
-  - No GPUs wasted
-```
+- some workers start
+- missing workers block progress
+- allocated GPUs sit idle
 
-**Kueue** is the Kubernetes-native solution for batch and GPU workload queuing:
+With gang scheduling:
 
-```yaml
-# ClusterQueue: defines capacity and fair-sharing
-apiVersion: kueue.x-k8s.io/v1beta1
-kind: ClusterQueue
-metadata:
-  name: gpu-queue
-spec:
-  resourceGroups:
-  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
-    flavors:
-    - name: h100
-      resources:
-      - name: nvidia.com/gpu
-        nominalQuota: 64        # 8 nodes × 8 GPUs
-        borrowingLimit: 128     # can borrow from other teams
+- job waits until all required resources are available
+- then starts together
 
----
-# Workload (wraps a Job for Kueue admission)
-apiVersion: batch/v1
-kind: Job
-metadata:
-  annotations:
-    kueue.x-k8s.io/queue-name: gpu-queue
-spec:
-  parallelism: 4
-  completions: 4
-  template:
-    spec:
-      containers:
-      - name: trainer
-        resources:
-          limits:
-            nvidia.com/gpu: 8
-```
+Concepts:
+
+- queue
+- quota
+- cohort/fair sharing
+- admission
+- workload priority
 
 ---
 
-## Part 3: Kubernetes Operators — The Pattern
+# Part 11: Topology Matters
 
-### What Is an Operator?
+GPU placement affects performance.
 
-An operator is a controller that encodes **domain-specific operational knowledge** for a complex stateful system. It watches Custom Resource Definitions (CRDs) and reconciles desired state to actual state.
+Fastest to slowest:
 
-**The controller reconciliation loop:**
-```
-Watch: API server events for owned CRDs
-For each event:
-    1. Fetch current state of the CRD
-    2. Observe actual system state
-    3. Calculate difference
-    4. Take minimum action to close the gap
-    5. Update CRD .status
-    6. Requeue after interval to catch drift
-```
+1. same GPU memory
+2. NVLink/NVSwitch
+3. PCIe same host
+4. InfiniBand/RDMA cross-node
+5. Ethernet cross-node
 
-**Why operators exist:** Built-in controllers (Deployment, StatefulSet) are general-purpose. Complex systems (databases, training clusters, inference platforms) have domain-specific lifecycle needs:
-- "How do I upgrade a Slurm cluster without losing in-flight jobs?"
-- "How do I replace a failed GPU node without resubmitting the training job?"
-- "How do I scale an inference fleet while preserving KV cache locality?"
+For training, poor topology can reduce throughput dramatically.
 
-### Building a Mental Model of Operators
+Check topology:
 
-```
-CRD: the declarative spec
-  e.g., SlurmCluster { workerCount: 32, gpusPerWorker: 8 }
-
-Controller: the operator that acts on the CRD
-  e.g., Soperator controller watches SlurmCluster
-
-Reconcile loop: runs constantly
-  - if workerCount is 30 but spec says 32: create 2 more worker Pods
-  - if a worker Pod failed: create replacement, notify Slurm
-  - if spec.workerCount changed from 32 to 16: drain and delete 16 worker Pods
-
-Status: reflects current state
-  e.g., SlurmCluster.status.readyWorkers: 30
-```
-
-**What happens when the operator pod crashes?**
-- Running workloads continue unaffected (operator is not in the data path)
-- No new reconciliation until operator restarts
-- Self-healing (node replacement) stops working until operator recovers
-- This is why operators need HA (multiple replicas with leader election)
-
-### Idempotency in Operators
-
-Operators must be idempotent: running reconcile multiple times on the same CRD state must produce the same result. This is harder than it sounds:
-
-```go
-// BAD: not idempotent
-// If this runs twice, it creates two Deployments
-err := client.Create(ctx, deployment)
-
-// GOOD: idempotent (create or update)
-err := controllerutil.CreateOrUpdate(ctx, client, deployment, func() error {
-    // mutate deployment to desired state
-    deployment.Spec = desiredSpec
-    return nil
-})
-
-// GOOD: check before creating
-existing := &appsv1.Deployment{}
-err := client.Get(ctx, types.NamespacedName{Name: "my-deploy"}, existing)
-if errors.IsNotFound(err) {
-    err = client.Create(ctx, deployment)
-} else if err == nil {
-    err = client.Update(ctx, deployment)
-}
-```
-
----
-
-## Part 4: AI Inference on Kubernetes
-
-### Inference Platform Architecture
-
-```
-User Request
-    │
-[API Gateway] ← rate limiting, auth, request validation
-    │
-[Router / Load Balancer] ← KV-cache aware or simple round-robin
-    │
-[Inference Pods] ← vLLM, Triton, TorchServe
-    │ GPU memory
-[Model Weights] ← loaded from object storage or shared filesystem
-```
-
-### Cold Start Problem
-
-When an inference pod starts (or restarts), it must load the model:
-- 7B model at FP16 = 14GB (fast — ~15 seconds on NVMe SSD)
-- 70B model at FP16 = 140GB (slow — 2–5 minutes from fast NFS)
-- 175B model = 350GB (very slow — may need pre-loading tricks)
-
-**Solutions:**
-1. **Never scale to zero:** Keep minimum 1–2 warm replicas
-2. **Pre-warm on new pod:** Send test request before routing real traffic (readiness probe)
-3. **Model caching on fast local SSD:** Attach NVMe SSDs to inference nodes, cache model weights
-4. **Quantization:** FP8 or INT4 quantization cuts model size by 2–4x, faster loading and inference
-
-### Autoscaling Inference
-
-```yaml
-# Scale based on queue depth (requests waiting)
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-spec:
-  scaleTargetRef:
-    name: llm-inference
-  metrics:
-  - type: External
-    external:
-      metric:
-        name: inference_queue_depth
-      target:
-        type: AverageValue
-        averageValue: "5"     # scale when queue > 5 per replica
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60   # don't scale up before 60s
-      policies:
-      - type: Pods
-        value: 2              # add max 2 replicas per scale event
-    scaleDown:
-      stabilizationWindowSeconds: 300  # wait 5 min before scale down
-```
-
-**Scale-up lead time:** Because model loading takes minutes, you need to scale up proactively:
-- Monitor queue depth trend (not just current value)
-- Scale when queue depth starts increasing, not when it's already saturated
-
-### GPU Memory Management in Inference
-
-The primary constraint for inference is GPU HBM memory:
-```
-H100 80GB HBM3:
-  - Model weights: 70B × 2 bytes (FP16) = 140GB → needs 2 GPUs minimum
-  - KV cache: depends on sequence length and batch size
-  - Activations: depends on batch size
-  - Overhead: framework runtime, CUDA context
-
-# vLLM PagedAttention splits HBM into:
-#   model_loading_portion + kv_cache_portion
-# kv_cache_portion = gpu_memory_utilization × total_HBM - model_weights
-
-# Example on 2× H100 80GB:
-#   Total HBM = 160GB
-#   Model weights (Llama-3 70B FP16) = 140GB
-#   Available for KV cache = 0.90 × 160 - 140 = 4GB
-#   At this ratio: very little KV cache → must serve small batch sizes or use quantization
-```
-
----
-
-## Part 5: Service Mesh Considerations for AI Platforms
-
-### When to Use a Service Mesh
-
-A service mesh (Istio, Linkerd) adds a sidecar proxy to every Pod, handling mTLS, traffic policies, retries, and telemetry.
-
-**When it helps for AI platforms:**
-- mTLS between inference API and internal clients
-- Traffic splitting for model version canary deployments (5% to v2, 95% to v1)
-- Request-level retry policies and timeout enforcement
-- Distributed tracing for inference request chains
-
-**When it hurts:**
-- High-throughput, latency-sensitive inference: sidecar adds 1–5ms per hop
-- Large model downloads: sidecar memory overhead is trivial but not zero
-- Training jobs: no benefit (NCCL doesn't go through the sidecar)
-
-**Ambient mesh (Istio 1.18+):** Moves L4 mTLS to a per-node agent (ztunnel) instead of per-pod sidecar. Better fit for GPU pods where overhead matters.
-
-### Disaster Recovery for Kubernetes Platforms
-
-**etcd:** The most critical component. Without etcd, the cluster cannot function.
 ```bash
-# Backup etcd (should run on a cron)
-ETCDCTL_API=3 etcdctl snapshot save /backup/etcd-$(date +%Y%m%d-%H%M%S).db \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
-  --cert=/etc/kubernetes/pki/etcd/server.crt \
-  --key=/etc/kubernetes/pki/etcd/server.key
-
-# Verify backup
-etcdctl snapshot verify /backup/etcd-*.db
-
-# Restore (on new cluster)
-etcdctl snapshot restore /backup/etcd-latest.db \
-  --data-dir=/var/lib/etcd-restored
+nvidia-smi topo -m
 ```
 
-**Stateful ML workloads:**
-- Model weights: stored in object storage (multi-region replication)
-- Training checkpoints: stored on distributed filesystem (WEKA/NFS with snapshot)
-- Experiment metadata: MLflow tracking server with PostgreSQL backend (replicated)
+Kubernetes scheduling should consider:
 
-**Multi-cluster failover:**
-- Active-active: two clusters in different AZs, both serving traffic
-- Active-passive: one cluster serves, other is warm standby
-- For training: no need for active-active (batch workload, submit to healthy cluster)
-- For inference: active-active with global load balancer, minimum 2 clusters
+- GPU type
+- node locality
+- NUMA
+- topology spread
+- high-speed network availability
 
 ---
 
-## Part 6: Interview Questions + Strong Answers
+# Part 12: NCCL, RDMA, And Distributed Training Networking
 
-### Q: "Why does distributed training need stronger scheduling guarantees than a web API?"
+Distributed training frequently uses NCCL for collective communication.
 
-"A web API pod is independent — adding or removing replicas is seamless, and a failed pod is replaced without affecting others. But a distributed training job is a tightly coupled group: all workers execute the same code and synchronize via all-reduce at every training step.
+Important signals:
 
-If one worker is not started: the entire job hangs waiting for it — wasting the GPUs that are running.
-If one worker crashes: the job cannot proceed — all other workers are idle.
-If workers start on suboptimal nodes: slow all-reduce degrades throughput for all workers.
+- all-reduce latency
+- network throughput
+- RDMA errors
+- packet drops
+- straggler workers
 
-This means:
-1. Gang scheduling: all-or-nothing placement. No partial start.
-2. Topology awareness: place workers to minimize all-reduce latency (same NVLink domain, then InfiniBand).
-3. Fault detection: fast detection and recovery. A slow straggler must be detected and replaced, not just 'eventually evicted.'
-4. Checkpoint management: a long training job cannot restart from scratch — it must checkpoint regularly and resume from the latest checkpoint."
+Debug ideas:
 
----
+```bash
+kubectl logs JOB_POD
+nvidia-smi
+ibstat
+ibv_devinfo
+ethtool -S INTERFACE
+```
 
-### Q: "What is a Kubernetes Operator and when would you use one over a StatefulSet?"
-
-"A Kubernetes Operator is a controller that watches a Custom Resource Definition and implements domain-specific reconciliation logic. It encodes operational knowledge that built-in controllers don't have.
-
-StatefulSet handles: ordered pod creation, stable network identities, persistent volume claim templates, ordered rolling updates.
-
-Operator handles: application-level lifecycle operations that require domain knowledge — 'to upgrade a Cassandra cluster, drain one node at a time, wait for repair to complete before proceeding, run nodetool cleanup after joining' — none of that is in a StatefulSet.
-
-I would use an operator when:
-1. The stateful system has a complex upgrade or failure-recovery procedure
-2. Operations require domain knowledge (run this command in this state, wait for this condition)
-3. The system needs custom health logic (not just pod liveness but application-level quorum)
-
-For AI platforms specifically: training cluster operators (Soperator), inference platform operators, MLflow operators, feature store operators — all encode GPU-specific or ML-specific lifecycle logic that generic Kubernetes controllers cannot express."
+If one worker is slow, the whole training step can slow down.
 
 ---
 
-## Points to Remember
+# Part 13: Inference Workloads
 
-- GPU cannot be overcommitted — one request = exclusive access to that GPU (unless MIG)
-- Gang scheduling prevents wasted GPU time from partial job placement — always use Kueue or Volcano for training
-- Topology manager allocates Pod resources from same NUMA node — critical for GPU PCIe performance
-- NVLink bandwidth (900 GB/s) >> InfiniBand (100 GB/s) >> PCIe/Ethernet — always prefer NVLink-connected GPUs for multi-GPU training
-- Cold start: 70B FP16 model takes 2–5 minutes to load — always keep warm replicas for inference
-- Operators are not in the critical data path — existing workloads continue if operator crashes
-- Operator reconcile must be idempotent — running it twice must not create duplicate resources
-- etcd backup is non-negotiable — test restore procedures, not just backups
+Inference characteristics:
 
-## What to Study Next
+- latency-sensitive
+- model-load cold starts
+- GPU memory bound
+- request batching matters
+- warm replicas matter
 
-- [nebius/03-gpu-ai-infrastructure.md](../nebius/03-gpu-ai-infrastructure.md) — GPU hardware (InfiniBand, DCGM, NCCL) at Nebius depth
-- [nebius/02-kubernetes-cilium-production.md](../nebius/02-kubernetes-cilium-production.md) — Kubernetes control plane and Cilium
-- [nebius/04-system-design.md](../nebius/04-system-design.md) — Design a GPU cluster and inference platform from scratch
+Common servers:
+
+- NVIDIA Triton
+- vLLM
+- TorchServe
+- TensorRT-LLM
+
+Model cold starts can take minutes for large models.
+
+Production rule:
+
+> Do not scale critical inference to zero unless cold-start latency is acceptable.
+
+---
+
+# Part 14: GPU Memory And KV Cache
+
+For LLM inference, GPU memory holds:
+
+- model weights
+- KV cache
+- activations
+- framework/runtime overhead
+
+Large context windows increase KV cache pressure.
+
+Symptoms:
+
+- OOM during inference
+- lower batch capacity
+- latency spikes
+- model server restarts
+
+Mitigations:
+
+- quantization
+- tensor parallelism
+- smaller context limits
+- batching controls
+- more GPUs or MIG strategy
+
+---
+
+# Part 15: Observability For GPU Platforms
+
+Use DCGM exporter for NVIDIA GPU metrics.
+
+Important metrics:
+
+- GPU utilization
+- memory used/free
+- temperature
+- power draw
+- ECC errors
+- XID errors
+- throttling
+- PCIe/NVLink throughput
+- queue wait time
+- training throughput
+- inference latency
+- model load time
+
+Commands:
+
+```bash
+nvidia-smi
+nvidia-smi dmon
+kubectl logs -n gpu-operator ds/nvidia-dcgm-exporter
+```
+
+Watch for:
+
+- low GPU utilization with high queue depth
+- memory near full
+- XID errors
+- GPU temperature/power throttling
+- high allocation with poor actual utilization
+
+---
+
+# Part 16: Common GPU Failure Modes
+
+## GPU Not Visible On Node
+
+Check:
+
+```bash
+lspci | grep -i nvidia
+nvidia-smi
+kubectl describe node NODE | grep nvidia.com/gpu
+```
+
+Likely causes:
+
+- driver not loaded
+- hardware issue
+- operator failed
+- device plugin failed
+
+## Pod Pending
+
+Likely causes:
+
+- insufficient GPUs
+- wrong GPU nodeSelector
+- missing toleration
+- quota/queue admission
+
+## Pod Starts But CUDA Fails
+
+Likely causes:
+
+- image CUDA version incompatible
+- runtime not injecting devices
+- driver/toolkit mismatch
+
+## Training Slow
+
+Likely causes:
+
+- poor GPU topology
+- slow network/all-reduce
+- data pipeline bottleneck
+- storage throughput bottleneck
+- CPU preprocessing bottleneck
+
+## Inference Latency High
+
+Likely causes:
+
+- cold model loads
+- GPU memory pressure
+- batch size too high/low
+- queue buildup
+- model server saturation
+
+---
+
+# Part 17: Operators For AI Platforms
+
+An Operator is a Kubernetes controller that manages a complex system using custom resources.
+
+Operator loop:
+
+```text
+Watch desired state -> observe actual state -> reconcile difference -> update status
+```
+
+Use operators when lifecycle needs domain knowledge.
+
+Examples:
+
+- GPU Operator
+- Kubeflow Training Operator
+- KServe
+- Ray Operator / KubeRay
+- Spark Operator
+- custom Slurm/Soperator-style controllers
+
+Good operators are:
+
+- idempotent
+- status-rich
+- safe during retries
+- not in the critical data path
+- observable
+
+---
+
+# Part 18: Storage And Data For AI Workloads
+
+Training needs fast access to datasets and checkpoint storage.
+
+Options:
+
+- object storage for datasets/checkpoints
+- distributed filesystems
+- local NVMe cache
+- prefetch sidecars/init containers
+
+SRE concerns:
+
+- storage throughput bottlenecks
+- checkpoint frequency
+- restore time
+- data locality
+- failed checkpoint corruption
+
+---
+
+# Part 19: Security And Multi-Tenancy
+
+GPU clusters are often shared by teams.
+
+Controls:
+
+- namespaces
+- quotas
+- node taints
+- RBAC
+- NetworkPolicy
+- image scanning
+- private registries
+- workload identity
+- admission policies
+
+Multi-tenancy question:
+
+> Is Kubernetes namespace isolation enough for this threat model?
+
+For hostile or strong tenant isolation, consider stronger sandboxing or separate clusters.
+
+---
+
+# Part 20: Cost And Capacity Management
+
+GPU platform SREs must think about utilization and fairness.
+
+Track:
+
+- allocated GPUs
+- used GPUs
+- idle allocated GPUs
+- queue wait time
+- job success/failure rate
+- cost per team/project
+
+Bad pattern:
+
+> 80% allocated GPUs but only 20% actual utilization.
+
+This means scheduling/accounting looks fine, but business value is poor.
+
+---
+
+# Part 21: Real Incident Stories
+
+## GPUs Missing After Node Upgrade
+
+Likely causes:
+
+- driver mismatch
+- operator DaemonSet failed
+- device plugin not registered
+
+## Expensive Training Job Idle For Hours
+
+Likely cause:
+
+- no gang scheduling; partial workers started
+
+## Inference Outage After Scale Down
+
+Likely cause:
+
+- scaled to zero; large model cold start too slow
+
+## Random Training Failures On One Node
+
+Likely causes:
+
+- bad GPU hardware
+- XID errors
+- ECC issues
+- thermal throttling
+
+---
+
+# Part 22: Command Interpretation Table
+
+| Command | What it answers | Bad signs |
+|---|---|---|
+| `nvidia-smi` | driver/GPU visibility | no devices, errors |
+| `nvidia-smi topo -m` | GPU topology | unexpected slow links |
+| `kubectl describe node` | allocatable GPUs | no `nvidia.com/gpu` |
+| `kubectl describe pod` | scheduling reason | insufficient GPU, taints |
+| GPU Operator pods | platform health | CrashLoop/validator fail |
+| DCGM metrics | GPU health/utilization | XID/ECC/temp/throttle |
+| Kueue/Volcano status | queue/admission | job waiting/partial issues |
+
+---
+
+# Part 23: Labs
+
+## Beginner
+
+- run `nvidia-smi` in a GPU Pod
+- inspect GPU node allocatable resources
+- schedule Pod to GPU node
+
+## Intermediate
+
+- taint GPU nodes and add tolerations
+- request specific GPU product with nodeSelector
+- deploy DCGM exporter and view metrics
+
+## Advanced
+
+- simulate Pending due to insufficient GPUs
+- test MIG resource scheduling
+- create queued training job
+- debug CUDA image/driver mismatch
+- analyze low GPU utilization
+
+---
+
+# Part 24: Interview Questions
+
+- Why are GPU workloads different from normal web services?
+- How does Kubernetes know a node has GPUs?
+- What does the NVIDIA device plugin do?
+- What does the GPU Operator manage?
+- Why is gang scheduling important?
+- What is MIG and when would you use it?
+- How would you debug a GPU Pod stuck Pending?
+- Why is inference cold start a production problem?
+- How do you monitor GPU health?
+
+---
+
+# Part 25: Senior Answer Shape
+
+> I treat GPU platforms as scarce-resource scheduling systems layered on Kubernetes. The device plugin advertises GPUs, the scheduler places Pods based on extended resources and constraints, and the GPU Operator manages drivers, runtime integration, device plugins, MIG, and metrics. For training I care about gang scheduling, topology, checkpointing, and utilization. For inference I care about warm capacity, model load time, GPU memory/KV cache, batching, and latency SLOs. During incidents I separate hardware, driver, runtime, scheduling, application, and data-path failures.
+
+---
+
+# Recall Prompts
+
+- Why are GPUs exposed as extended resources?
+- Why is partial scheduling bad for distributed training?
+- What does MIG solve?
+- Why can GPU allocation look high while utilization is low?
+- What layers can cause `nvidia-smi` to fail inside a Pod?

@@ -1,552 +1,547 @@
-# Foundations: Linux Internals And How Kubernetes Really Uses Them
+# Foundations: Kubernetes Zero To Hero For SRE And Platform Engineers
 
-Kubernetes is not a replacement for Linux knowledge. It is a control layer sitting on top of Linux processes, cgroups, namespaces, filesystems, networking, and kernel behavior.
+Kubernetes is a system for running containers reliably across many machines. It gives you a control plane, a scheduling system, APIs for desired state, and node agents that turn declarations into running workloads.
 
-The more senior you become, the less you say “Kubernetes is broken” and the more you say, “the kubelet is healthy, but the node dataplane is failing for new Pod sandboxes,” or “the scheduler is fine, but the real problem is memory pressure and cgroup reclaim on two worker nodes.”
+Kubernetes does not replace Linux. It coordinates Linux hosts, container runtimes, cgroups, namespaces, filesystems, and networking.
 
-## Mentor Mode
+This guide is designed as a complete path:
 
-When Kubernetes feels complicated, reduce it to this:
+- Beginner: what Kubernetes is and why it exists
+- Intermediate: pods, deployments, services, config, storage, scheduling
+- Advanced: control plane, kubelet, runtime, CNI, controllers, probes, resources
+- SRE Level: debugging Pending, CrashLoopBackOff, ImagePullBackOff, Service failures, node pressure
+- Interview Level: explain desired state, reconciliation, scheduling, and node-level behavior clearly
 
-1. What was the desired state?
-2. Which component is responsible for making that state real?
-3. Which Linux primitive actually enforces the behavior?
-4. Is the problem in the control plane, the node plane, or the dataplane?
-5. What evidence would prove that?
+---
 
-That mental model is what takes you from “kubectl user” to real production operator.
+# Part 1: Why Kubernetes Exists
 
-## Answer This In The Portal
+Before Kubernetes, teams ran services directly on VMs or physical hosts.
 
-- Draft your Kubernetes internals answer here: [/workspace?challenge=Kubernetes%20internals%20and%20node-level%20reasoning](/workspace?challenge=Kubernetes%20internals%20and%20node-level%20reasoning)
-- Use this structure while answering: [answers-template.md](../answers-template.md)
-- Guided review flow: [interactive-study.mdx](../interactive-study.mdx)
+Problems:
 
-## The Three-Plane Model
+- where should each service run?
+- what happens if a host dies?
+- how do we roll out safely?
+- how do we scale up/down?
+- how do services find each other?
+- how do we isolate workloads?
 
-This is one of the cleanest ways to think in interviews.
+Kubernetes answers these with a declarative platform.
 
-### Control Plane
+You describe desired state. Kubernetes continuously reconciles actual state toward it.
 
-This is where desired state is stored and decisions are made:
+```text
+Desired state -> Kubernetes control loops -> Actual running workloads
+```
+
+---
+
+# Part 2: Memory Palace — Kubernetes Is A City
+
+Think of a cluster as a city.
+
+| Kubernetes concept | City analogy | Production meaning |
+|---|---|---|
+| Cluster | City | Whole platform |
+| Node | Building | Worker machine |
+| Pod | Apartment | Smallest workload unit |
+| Container | Person/process in apartment | App process |
+| Scheduler | Housing office | Chooses node placement |
+| kubelet | Building manager | Runs assigned pods |
+| Service | Public phone number | Stable access to pods |
+| EndpointSlice | Directory of real apartments | Ready backend list |
+| Ingress | City gate | External HTTP entry |
+| CNI | Roads | Pod networking |
+| CoreDNS | City directory | Service name lookup |
+| Controller | City department | Keeps desired state true |
+
+---
+
+# Part 3: Cluster Architecture
+
+Kubernetes has two major areas.
+
+## Control Plane
+
+Responsible for state, decisions, and coordination.
+
+Components:
 
 - API server
 - etcd
 - scheduler
 - controller manager
+- cloud controller manager
 
-Symptoms from this plane:
+## Worker Nodes
 
-- objects do not update
-- new Pods do not schedule
-- node or workload status becomes stale
-- control loops lag or fail
+Responsible for running workloads.
 
-### Node Plane
-
-This is where the work is actually run:
+Components:
 
 - kubelet
-- container runtime
-- cgroups
-- filesystems
-- volume mounts
-- node OS
+- container runtime/containerd
+- kube-proxy or eBPF dataplane
+- CNI plugin
+- Linux kernel
 
-Symptoms from this plane:
+---
 
-- image pulls fail
-- containers will not start
-- probes flap
-- node pressure causes evictions
-- logs or volumes behave strangely
+# Part 4: API Server And Desired State
 
-### Dataplane
+The API server is the front door.
 
-This is where packets are forwarded and policies are enforced:
-
-- Pod network namespace
-- veth pairs
-- CNI setup
-- kube-proxy or eBPF service logic
-- iptables, nftables, or BPF policy
-- conntrack
-
-Symptoms from this plane:
-
-- Pod-to-Pod failures
-- Service VIP failures
-- DNS timeout in only some Pods
-- network policy mismatches
-- cross-node reachability problems
-
-## Linux Primitives You Must Own
-
-### Processes
-
-Containers still run as ordinary Linux processes.
-
-That means every container has:
-
-- PID
-- scheduler state
-- memory map
-- file descriptors
-- open sockets
-- cgroup membership
-- namespace membership
-
-Useful commands:
+Every `kubectl` command talks to the API server.
 
 ```bash
-ps aux
-top
-pidstat -p ALL 1
-lsof -p <pid>
-strace -p <pid>
-cat /proc/<pid>/status
+kubectl get pods
+kubectl apply -f deployment.yaml
+kubectl describe pod mypod
 ```
 
-Mentor note:
+Kubernetes objects live as API resources.
 
-- if you cannot inspect a Linux process, you are not really debugging the container yet
+Examples:
 
-### Namespaces
+- Pod
+- Deployment
+- Service
+- ConfigMap
+- Secret
+- PersistentVolumeClaim
+- Ingress
+- NetworkPolicy
 
-Namespaces isolate resource views.
+---
 
-The most important for containers:
+# Part 5: etcd
 
-- `pid`
-- `net`
-- `mnt`
-- `uts`
-- `ipc`
-- `user`
+etcd stores cluster state.
 
-Why this matters in Kubernetes:
+If etcd is unhealthy, the cluster may appear stale or unable to persist changes.
 
-- a Pod usually has its own network namespace
-- containers inside the same Pod share that namespace
-- sidecars and the main app see the same Pod IP
-- many “Pod networking” issues are namespace-level Linux issues
-
-Useful commands:
-
-```bash
-lsns
-nsenter --target <pid> --net
-nsenter --target <pid> --mount
-readlink /proc/<pid>/ns/net
-```
-
-### cgroups v2
-
-Requests and limits eventually become kernel-enforced behavior through cgroups.
-
-Important concepts:
-
-- `cpu.max` and throttling
-- `cpu.weight` and relative sharing
-- `memory.max` for hard caps
-- `memory.high` for reclaim pressure before OOM
-- `memory.events` for pressure clues
-- pressure stall information for queueing pain
-
-Useful commands:
-
-```bash
-mount | grep cgroup
-cat /sys/fs/cgroup/cgroup.controllers
-cat /proc/cgroups
-find /sys/fs/cgroup -maxdepth 3 -type f | head
-cat /proc/pressure/cpu
-cat /proc/pressure/memory
-cat /proc/pressure/io
-```
-
-Senior interview rule:
-
-- do not just say “CPU high”
-- explain whether this is saturation, throttling, runnable queueing, reclaim, or IO stall
-
-### Filesystems And Volumes
-
-Containers use Linux filesystems and mounted storage. Nothing magical here.
-
-Operationally important:
-
-- image layers often use overlay filesystems
-- writable layers are not a durable storage strategy
-- kubelet mounts persistent volumes and projected config
-- disk pressure and inode exhaustion can break nodes without obvious app-level errors
-
-Useful commands:
-
-```bash
-mount
-findmnt
-df -h
-df -i
-du -sh /var/lib/containerd 2>/dev/null
-du -sh /var/lib/kubelet 2>/dev/null
-```
-
-### Linux Networking On A Node
-
-The node dataplane may involve:
-
-- veth pairs
-- bridge or routed Pod networking
-- iptables or nftables
-- eBPF programs and maps
-- conntrack state
-
-Useful commands:
-
-```bash
-ip addr
-ip route
-ip link
-ss -tulpn
-iptables-save
-nft list ruleset
-bpftool prog show
-bpftool map show
-conntrack -S
-```
-
-## Kubernetes Components Through A Linux Lens
-
-### API Server
-
-The API server is the front door to cluster state.
-
-If it is impaired:
-
-- writes may fail
-- controllers lag
-- scheduler decisions slow down
-- kubelets may keep running existing workloads while the cluster feels stale
-
-### etcd
-
-etcd is the authoritative state store, not a random implementation detail.
-
-Operationally, you should care about:
+SRE concerns:
 
 - quorum
-- write latency
+- disk latency
+- backup and restore
 - compaction
 - defragmentation
-- backup and restore procedures
+- control-plane blast radius
 
-Staff-level note:
+etcd is the memory of the cluster.
 
-- many “cluster failures” are actually state-store or control-plane health problems
+---
 
-### Scheduler
+# Part 6: Pods
 
-The scheduler decides placement from declared constraints.
+A Pod is the smallest schedulable unit.
 
-It evaluates:
+A Pod can contain one or more containers that share:
+
+- network namespace
+- Pod IP
+- volumes
+- localhost
+
+```bash
+kubectl get pods -A
+kubectl describe pod POD -n NAMESPACE
+kubectl logs POD -n NAMESPACE
+kubectl exec -it POD -n NAMESPACE -- sh
+```
+
+A container is not scheduled by itself. A Pod is scheduled.
+
+---
+
+# Part 7: Deployments, ReplicaSets, And Controllers
+
+A Deployment manages ReplicaSets. ReplicaSets manage Pods.
+
+```text
+Deployment -> ReplicaSet -> Pods
+```
+
+Deployment gives you:
+
+- rolling updates
+- rollback
+- replica management
+- declarative workload control
+
+```bash
+kubectl get deploy
+kubectl rollout status deploy/api
+kubectl rollout history deploy/api
+kubectl rollout undo deploy/api
+```
+
+Controllers constantly compare desired state and actual state.
+
+---
+
+# Part 8: Services And Discovery
+
+Pods are ephemeral. IPs change.
+
+A Service provides stable access.
+
+Types:
+
+| Type | Use |
+|---|---|
+| ClusterIP | internal access |
+| NodePort | expose on every node port |
+| LoadBalancer | cloud LB integration |
+| ExternalName | DNS alias |
+| Headless | direct pod discovery |
+
+```bash
+kubectl get svc
+kubectl describe svc api
+kubectl get endpointslice
+```
+
+A Service without ready endpoints will not send useful traffic.
+
+---
+
+# Part 9: Scheduling
+
+The scheduler chooses a node for a Pod.
+
+It considers:
 
 - resource requests
 - taints and tolerations
-- affinity and anti-affinity
-- topology spread
 - node selectors
-- custom scheduling constraints
+- affinity/anti-affinity
+- topology spread constraints
+- volume constraints
 
-The scheduler does not solve:
-
-- node runtime failure
-- image pull latency
-- broken CNI
-- packet loss
-
-### kubelet
-
-The kubelet is the most important node agent to understand.
-
-It:
-
-- watches Pods assigned to the node
-- asks the runtime to realize sandboxes and containers
-- manages probes
-- mounts volumes
-- reports status
-- participates in eviction under pressure
-
-If kubelet is sick:
-
-- status becomes misleading
-- Pods may look stuck between states
-- probes become noisy
-- log access and runtime behavior diverge
-
-Useful commands:
+Debug Pending Pods:
 
 ```bash
-systemctl status kubelet
-journalctl -u kubelet -n 200
-crictl ps
-crictl pods
+kubectl describe pod POD
+kubectl get events -A --sort-by=.lastTimestamp
+kubectl describe node NODE
 ```
 
-### Container Runtime
+Pending usually means scheduling constraints, missing resources, or volume issues.
 
-The runtime is where sandboxes and containers become real processes.
+---
 
-If the runtime breaks, symptoms may appear as:
+# Part 10: ConfigMaps And Secrets
 
-- `ImagePullBackOff`
-- `CrashLoopBackOff`
-- sandbox creation errors
-- failed mounts
-- missing logs
+ConfigMaps store non-sensitive configuration.
 
-Useful commands:
+Secrets store sensitive values, but are not magically secure unless encryption and access controls are configured.
 
 ```bash
-crictl ps -a
-crictl inspect <container-id>
-crictl logs <container-id>
-ctr -n k8s.io containers list
+kubectl get configmap
+kubectl get secret
+kubectl describe secret SECRET
 ```
 
-## How Pod Networking Really Works
+Use secrets carefully:
 
-At a high level, a Pod usually gets:
+- enable encryption at rest
+- restrict RBAC
+- avoid logging secrets
+- prefer external secret managers for production
 
-- a network namespace
-- one or more interfaces
-- a Pod IP
-- routes
-- DNS config
-- connectivity controlled by the node dataplane
+---
 
-When traffic fails, split it into:
+# Part 11: Probes
 
-1. interface and namespace creation
-2. local routing
-3. Service translation
-4. policy enforcement
-5. cross-node transport
-6. DNS resolution
+Kubernetes uses probes to decide health.
 
-This prevents vague answers like “CNI issue.”
+| Probe | Meaning |
+|---|---|
+| startupProbe | app finished startup |
+| readinessProbe | app can receive traffic |
+| livenessProbe | app should be restarted if stuck |
 
-## Services, EndpointSlices, And Readiness
+Common mistake:
 
-Senior engineers know the distinction between:
+- using liveness when readiness is needed
+- probe too aggressive for slow startup
+- shallow health check that ignores dependencies
 
-- a healthy container
-- a ready Pod
-- a reachable endpoint
-- a healthy Service backend
+---
 
-Service traffic often depends on:
-
-- Service VIP
-- EndpointSlice correctness
-- readiness gating
-- kube-proxy or eBPF dataplane rules
-- conntrack behavior on the node
-
-Useful commands:
-
-```bash
-kubectl get svc,endpoints,endpointslices -A
-kubectl describe svc <name>
-kubectl get pod -o wide
-```
-
-Mentor note:
-
-- “Pod is running” does not prove “Service is healthy”
-
-## The Questions Behind Common Symptoms
-
-### Symptom: Pod Will Not Start
-
-Ask:
-
-- did the scheduler bind the Pod
-- did kubelet receive and process it
-- did image pull succeed
-- did sandbox creation succeed
-- did volume setup succeed
-- did the process start and exit
-
-### Symptom: Pod Starts But Never Becomes Ready
-
-Ask:
-
-- is the app listening on the expected port
-- are startup or readiness probes wrong
-- is dependency access blocked
-- is DNS resolution failing
-- is sidecar init delaying readiness
-
-### Symptom: Service Fails But Pod Is Running
-
-Ask:
-
-- is the Pod marked ready
-- does EndpointSlice include the Pod
-- does the Service selector match
-- is kube-proxy or eBPF dataplane healthy
-- does network policy block the path
-
-### Symptom: Only One Node Has Many Failures
-
-Ask:
-
-- kubelet health
-- disk pressure or inode exhaustion
-- CNI state drift
-- conntrack pressure
-- MTU mismatch
-- DNS cache issue on that node
-- runtime instability
-
-## Resource Management The Senior Way
-
-### Requests Versus Limits
+# Part 12: Resources, Requests, Limits
 
 Requests affect scheduling.
 
 Limits affect runtime enforcement.
 
-If you say only that, you are still at the surface.
+```yaml
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+```
 
-Go deeper:
+Important behavior:
 
-- low request plus high actual use can cause noisy-neighbor behavior
-- low CPU limit can cause throttling and latency spikes
-- memory limit can create hard kills
-- `memory.high` style reclaim pressure can hurt before OOM
-- overcommitting nodes is a policy decision, not an accident
+- CPU limit can throttle
+- memory limit can OOMKill
+- missing requests cause bad scheduling decisions
+- overcommit is a policy choice
 
-### Eviction Thinking
+---
 
-Kubernetes can evict Pods due to:
+# Part 13: Storage
 
-- memory pressure
-- disk pressure
-- inode pressure
-- ephemeral storage pressure
+Kubernetes storage concepts:
 
-Interview tip:
-
-- know the difference between app crash, OOM kill, and kubelet eviction
-
-## Linux Commands That Matter During Kubernetes Incidents
-
-### Node State
+| Concept | Meaning |
+|---|---|
+| Volume | mounted storage in Pod |
+| PersistentVolume | actual storage resource |
+| PersistentVolumeClaim | request for storage |
+| StorageClass | dynamic provisioning policy |
 
 ```bash
-uptime
-free -m
-vmstat 1
-iostat -xz 1
+kubectl get pv,pvc,storageclass
+kubectl describe pvc PVC
+```
+
+Storage problems often appear as Pods stuck in Pending or ContainerCreating.
+
+---
+
+# Part 14: Networking Overview
+
+Kubernetes expects:
+
+- Pods can communicate with Pods
+- Pods can communicate with Services
+- nodes can reach Pods
+- DNS resolves service names
+
+Core pieces:
+
+- CNI plugin
+- CoreDNS
+- kube-proxy or eBPF service dataplane
+- NetworkPolicy
+- Ingress controller
+
+Networking issues should be separated into DNS, Service, endpoint, policy, and node dataplane problems.
+
+---
+
+# Part 15: Security Basics
+
+Key controls:
+
+- namespaces for organization
+- RBAC for API permissions
+- service accounts for workload identity
+- NetworkPolicy for traffic control
+- securityContext for runtime restrictions
+- admission policies for guardrails
+
+```bash
+kubectl auth can-i get pods
+kubectl get role,rolebinding -A
+kubectl get serviceaccount -A
+```
+
+Least privilege matters.
+
+---
+
+# Part 16: Troubleshooting Common States
+
+## Pending
+
+Likely causes:
+
+- insufficient CPU/memory
+- taints not tolerated
+- affinity impossible
+- PVC not bound
+- node selector mismatch
+
+## ImagePullBackOff
+
+Likely causes:
+
+- wrong image name/tag
+- private registry auth missing
+- registry outage
+- architecture mismatch
+
+## CrashLoopBackOff
+
+Likely causes:
+
+- app exits on startup
+- missing config/secret
+- dependency unavailable
+- bad command/args
+
+## Running But Not Ready
+
+Likely causes:
+
+- readiness probe failing
+- app not listening
+- dependency unavailable
+- startup too slow
+
+## Service Fails But Pods Run
+
+Likely causes:
+
+- labels/selectors mismatch
+- no ready endpoints
+- wrong targetPort
+- NetworkPolicy
+- dataplane/kube-proxy/eBPF issue
+
+---
+
+# Part 17: Node-Level Debugging
+
+Kubernetes incidents often require node access.
+
+```bash
+systemctl status kubelet
+journalctl -u kubelet -n 200
+crictl ps -a
+crictl logs CONTAINER_ID
 df -h
 df -i
-```
-
-### Process And Runtime
-
-```bash
-ps aux --sort=-%mem | head
-ps aux --sort=-%cpu | head
-crictl ps -a
-crictl stats
-journalctl -u kubelet -n 200
-```
-
-### Network
-
-```bash
-ip addr
-ip route
-ss -tulpn
-iptables-save | head -200
+free -m
+vmstat 1 5
 conntrack -S
-tcpdump -ni any host <pod-ip>
 ```
 
-### Kubernetes Objects
-
-```bash
-kubectl get nodes
-kubectl describe node <node>
-kubectl get pods -A -o wide
-kubectl describe pod <pod> -n <ns>
-kubectl get events -A --sort-by=.lastTimestamp
-```
-
-## How Linux And Kubernetes Work Hand In Hand
-
-This is the bridge interviewers care about:
-
-- Kubernetes declares desired state
-- kubelet and runtime translate that into processes, namespaces, mounts, and cgroups
-- the kernel enforces scheduling, memory, IO, and networking behavior
-- CNI and dataplane logic wire Pod and Service traffic into Linux networking
-- observability and troubleshooting still depend on Linux signals underneath
-
-Once this clicks, Kubernetes becomes much less mystical.
-
-## Staff-Level Drills
-
-### Drill 1: Pod Ready In One Zone, Failing In Another
-
 Think:
 
-- topology-specific dependency reachability
-- zone-local DNS or LB path
-- CNI differences
-- route or MTU mismatch
-- node image or kernel drift
+- kubelet health
+- runtime health
+- disk/inode pressure
+- memory pressure
+- CNI state
+- conntrack exhaustion
 
-### Drill 2: API Latency Spikes After CPU Limits Added
+---
 
-Think:
+# Part 18: Real Incident Stories
 
-- cgroup CPU throttling
-- request concurrency
-- probe sensitivity
-- tail latency under quota pressure
+## Pods Pending After Deployment
 
-### Drill 3: New Pods Cannot Reach A Database
+Wrong assumption: deployment broken.
 
-Think:
+Better path:
 
-- DNS for the database name
-- egress network policy
-- route and firewall path
-- NAT or SNAT expectations
-- database allowlist assumptions
+- describe pod
+- read scheduler events
+- inspect requests/taints/PVCs
 
-## Reinforcement From Your Archive
+## Service Exists But No Traffic
 
-Use these after this guide if you want more examples:
+Wrong assumption: network broken.
 
-- [06-kubernetes-networking-deep-dive.md](06-kubernetes-networking-deep-dive.md)
-- [12-kubernetes-gpu-ai-platforms-and-operators.md](12-kubernetes-gpu-ai-platforms-and-operators.md)
-- [25-yaml-and-kubernetes-manifest-design.md](25-yaml-and-kubernetes-manifest-design.md)
-- [13-docker-and-container-runtime.md](13-docker-and-container-runtime.md)
-- [26-devops-troubleshooting-and-security-errors.md](26-devops-troubleshooting-and-security-errors.md)
+Better path:
 
-## What Good Looks Like In An Interview
+- check Service selector
+- check EndpointSlice
+- check readiness
+- test direct Pod IP vs Service IP
 
-If someone asks, “Why would a Service fail even when Pods are running?”, a strong answer sounds like this:
+## CrashLoopBackOff After Config Change
 
-1. I would separate container health from Service reachability.
-2. I would verify readiness, selectors, and EndpointSlice population.
-3. I would then check whether kube-proxy or the eBPF dataplane is programming the Service path correctly.
-4. If it is scoped to one node, I would inspect node-local networking, conntrack, and CNI state.
-5. I would confirm whether this is a control-plane state issue or a dataplane delivery issue before proposing fixes.
+Better path:
 
-That answer shows Linux awareness, Kubernetes awareness, and operational discipline together.
+- logs previous container
+- inspect env/config/secret mount
+- rollback deployment
+
+## One Node Has Many Failures
+
+Better path:
+
+- describe node
+- kubelet logs
+- runtime status
+- disk/inode/conntrack/CNI
+
+---
+
+# Part 19: Kubernetes + Linux Connection
+
+Kubernetes desired state becomes Linux reality:
+
+- Pod -> namespaces
+- resources -> cgroups
+- volume -> mounts
+- Service -> iptables/IPVS/eBPF rules
+- container -> process
+- node pressure -> kernel/resource pressure
+
+If Linux is weak, Kubernetes troubleshooting stays shallow.
+
+---
+
+# Part 20: Interview Questions
+
+- What happens after you run `kubectl apply`?
+- What is the difference between Pod and Deployment?
+- Why can a Pod be Running but not Ready?
+- What does the scheduler do and not do?
+- How does a Service find Pods?
+- What causes CrashLoopBackOff?
+- How do requests and limits differ?
+- How would you debug a Service with no endpoints?
+
+---
+
+# Part 21: Labs
+
+## Beginner
+
+- create a Pod
+- create a Deployment
+- expose with ClusterIP Service
+- inspect logs and events
+
+## Intermediate
+
+- break a readiness probe
+- create ImagePullBackOff intentionally
+- create Pending Pod with impossible nodeSelector
+- rollback a Deployment
+
+## Advanced
+
+- inspect node kubelet logs
+- compare Pod IP vs Service access
+- simulate memory OOM
+- inspect container runtime with crictl
+
+---
+
+# Part 22: Senior Answer Shape
+
+> Kubernetes is a desired-state control system. The API server accepts declarations, stores them in etcd, and controllers continuously reconcile actual state toward desired state. The scheduler chooses nodes for Pods based on constraints, while kubelet and the container runtime turn assigned Pods into Linux processes with namespaces, cgroups, mounts, and network configuration. During incidents I separate control-plane state, node execution, and dataplane delivery before changing anything.
+
+---
+
+# Recall Prompts
+
+- What is reconciliation?
+- Why is a Pod the smallest schedulable unit?
+- Why can a Service have no endpoints?
+- What is the kubelet responsible for?
+- What is the difference between control plane, node plane, and dataplane?

@@ -1,360 +1,520 @@
-# Cloud Networking and Kubernetes Networking
+# Foundations: Cloud Networking And Kubernetes Networking Zero To Hero
 
-> Cloud networking and Kubernetes networking are two separate layers that must work together. Understanding where they meet — and where they conflict — is the difference between guessing at incidents and solving them.
+Cloud networking and Kubernetes networking are separate layers that must work together. Most production networking incidents happen at the boundary between them: cloud load balancers, VPC routes, firewalls/security groups, Pod IPs, Services, CNIs, NAT, and DNS.
 
----
+This guide is designed as a complete path:
 
-## What Is It and Why It Matters
-
-When you run Kubernetes on a cloud provider (GCP/GKE, AWS/EKS, Azure/AKS), there are **two networking systems** operating simultaneously:
-
-1. **Cloud VPC networking:** The network that the cloud provider manages. Controls how VMs (nodes) talk to each other, how they reach the internet, and how traffic enters from outside.
-
-2. **Kubernetes Pod networking:** The overlay or native routing that CNI implements on top of the VPC. Controls how Pods talk to each other and to Services.
-
-**Problems arise at the intersection:** A cloud firewall rule can block Kubernetes health checks. A VPC route can be missing for Pod CIDRs. A cloud load balancer health check path can diverge from actual service health.
+- Beginner: VPCs, subnets, routes, firewalls, load balancers, Pod networks
+- Intermediate: AWS/EKS, GCP/GKE, NAT, private clusters, ingress, health checks
+- Advanced: direct Pod routing, NEGs, ALB target modes, pod IP exhaustion, egress control, flow logs
+- SRE Level: debug 502s, blocked health checks, failed egress, one-node failures, cloud/K8s mismatch
+- Interview Level: explain packet paths clearly across cloud and cluster layers
 
 ---
 
-## Mental Model
+# Part 1: Mental Model — Two Networks, One Request
 
-```
+When Kubernetes runs in the cloud, two networks cooperate:
+
+| Layer | Owns | Examples |
+|---|---|---|
+| Cloud network | node connectivity and external traffic | VPC, subnets, route tables, firewalls, load balancers, NAT |
+| Kubernetes network | Pod and Service connectivity | CNI, Pod IPs, ClusterIP, Ingress, NetworkPolicy, kube-proxy/eBPF |
+
+Request path example:
+
+```text
 Internet
-    │
-[Cloud Load Balancer] ← health check via cloud
-    │
-[VPC Network]
-  [Security Groups / Firewall Rules] ← L4 stateful (SG) or stateless (NACL)
-    │
-[Node EC2/GCE instance]
-    │ iptables / eBPF (kube-proxy / Cilium)
-[Pod Network]
-  [NetworkPolicy] ← L3/L4 within cluster
-    │
-[Pod]
+ -> Cloud DNS / Load Balancer
+ -> VPC firewall / security group
+ -> Node or Pod IP
+ -> Kubernetes Service / datapath
+ -> Pod
 ```
 
-Each layer can independently drop traffic. The debugging approach: identify the layer where the drop occurs.
+Each layer can drop or misroute traffic independently.
 
 ---
 
-## Part 1: GCP Networking for Kubernetes (GCP/GKE)
+# Part 2: Memory Palace — Cloud + Kubernetes As City Roads
 
-### GCP VPC — Key Differences from AWS
-
-GCP's VPC is **global** — a single VPC spans all regions. Subnets are regional.
-
-```
-GCP VPC "production-vpc"
-  ├── Subnet: us-central1 (10.1.0.0/20)   ← GKE node IPs here
-  ├── Subnet: europe-west4 (10.2.0.0/20)
-  └── Subnet: asia-east1 (10.3.0.0/20)
-```
-
-**How GKE uses this:**
-- GKE nodes get IPs from the node subnet
-- Pod IPs come from a secondary IP range on the same subnet (VPC-native clusters)
-- Services (ClusterIPs) come from a separate secondary range
-
-```bash
-# GKE VPC-native cluster: show node and pod CIDRs
-gcloud container clusters describe my-cluster --format='value(networkConfig.network)'
-gcloud container clusters describe my-cluster --format='value(clusterIpv4Cidr)'
-gcloud container clusters describe my-cluster --format='value(servicesIpv4Cidr)'
-```
-
-### GCP Firewall Rules
-
-GCP uses **firewall rules** (stateful, applied at the VPC level based on tags or service accounts):
-
-```
-# Default GKE firewall rules (auto-created):
-- Allow all internal traffic between nodes in the cluster
-- Allow health checks from GCP Load Balancer ranges (130.211.0.0/22, 35.191.0.0/16)
-- Allow SSH from IAP (35.235.240.0/20) if configured
-
-# Common SRE issue: custom firewall rules block health checks
-gcloud compute firewall-rules list --filter="network=production-vpc"
-```
-
-**Key differences from AWS Security Groups:**
-- GCP firewall rules: applied at network level, based on network tags or service accounts
-- No per-instance security groups (though you can simulate this with tags)
-- Rules can be hierarchical (org policy → folder → project)
-- VPC flow logs: `gcloud compute networks describe <vpc> --format='value(enableUlaInternalIpv6)'`
-
-### GKE Load Balancing
-
-**External HTTP(S) Load Balancer:**
-```
-Internet → Global Anycast IP → GCP HTTP(S) LB
-    → Backend Service (NEG: Network Endpoint Group)
-    → Pod IPs directly (VPC-native GKE)
-```
-
-**Key: NEGs vs Instance Groups**
-- Old way: Instance Group (routes to node, then kube-proxy routes to Pod)
-- New way: NEG — Cloud LB routes directly to Pod IP, bypassing kube-proxy entirely
-- NEGs require VPC-native clusters (secondary IP ranges for Pods)
-- NEGs give better health checking (per-Pod, not per-Node)
-
-```bash
-# Check if NEG is being used
-kubectl describe svc my-service | grep "cloud.google.com/neg"
-# Annotation: cloud.google.com/neg: '{"ingress": true}' → NEGs enabled
-
-# List NEGs
-gcloud compute network-endpoint-groups list
-```
-
-### Cloud NAT and Egress
-
-Pods need to reach external services (DockerHub, package repos, external APIs). Without Cloud NAT, outbound traffic from Pods uses the node's external IP.
-
-**Cloud NAT:**
-```bash
-# Create NAT gateway for a region
-gcloud compute routers create nat-router \
-  --network=production-vpc --region=us-central1
-
-gcloud compute routers nats create nat-config \
-  --router=nat-router \
-  --auto-allocate-nat-external-ips \
-  --nat-all-subnet-ip-ranges \
-  --region=us-central1
-```
-
-**With VPC-native GKE:** Both node IPs and Pod IPs are NAT'd when leaving the VPC.
+| Concept | City analogy | Production meaning |
+|---|---|---|
+| VPC | city road network | private cloud network |
+| Subnet | district | address range in zone/region |
+| Route table | road signs | next-hop decisions |
+| Internet Gateway | highway entrance | internet path |
+| NAT Gateway | outbound toll booth | private outbound access |
+| Firewall / SG | security checkpoint | traffic permission |
+| Load Balancer | traffic dispatcher | routes external/internal traffic |
+| Node | building | VM running kubelet |
+| Pod IP | apartment address | workload network identity |
+| Service | public phone number | stable access to Pods |
+| CNI | local road crew | implements Pod networking |
+| NetworkPolicy | neighborhood access rule | cluster traffic control |
 
 ---
 
-## Part 2: AWS Networking for Kubernetes (AWS/EKS)
+# Part 3: Core Cloud Networking Basics
 
-### AWS VPC — Regional, Explicit Route Tables
+## VPC
 
-AWS VPCs are **regional** (unlike GCP's global VPCs). Every subnet needs explicit routing.
+A private network boundary in a cloud provider.
 
-```
-AWS VPC 10.0.0.0/16  (us-east-1)
-  ├── Public Subnet: 10.0.1.0/24  (us-east-1a) → route table → Internet Gateway
-  ├── Public Subnet: 10.0.2.0/24  (us-east-1b) → route table → Internet Gateway
-  ├── Private Subnet: 10.0.10.0/24 (us-east-1a) → route table → NAT Gateway
-  └── Private Subnet: 10.0.11.0/24 (us-east-1b) → route table → NAT Gateway
-```
+## Subnet
 
-**EKS node placement:**
-- Worker nodes typically in private subnets
-- Public subnets for load balancers
-- Bastion host or SSM for node access
+A smaller IP range inside a VPC. Usually tied to an AZ or region depending on cloud.
 
-### Security Groups vs NACLs — The Critical Difference
+## Route Table
 
-This is a common interview question. Understand it deeply.
+Decides where packets go next.
 
-| | Security Group | Network ACL |
-|--|---------------|-------------|
-| **Level** | Instance/ENI | Subnet |
-| **Statefulness** | Stateful | Stateless |
-| **Rules** | Allow only | Allow and Deny |
-| **Return traffic** | Automatic | Must explicitly allow |
-| **Order** | All rules evaluated | Rules evaluated in number order |
+## Firewall / Security Group
 
-**Why statefulness matters:**
-- Security Group: If you allow inbound port 443, the response packet is automatically allowed out. You do not need to write an outbound rule for the response.
-- NACL: If you allow inbound port 443, you MUST also write an outbound rule allowing ephemeral ports (1024-65535) for the TCP response. Without this, TCP handshake fails on the return.
+Controls whether traffic is allowed.
 
-```bash
-# Common troubleshooting: why can I connect from A to B but not B to A?
-# Check: Security Group on B allows inbound from A's security group / CIDR
-# Check: NACL on B's subnet allows both inbound and outbound
+## NAT
 
-# AWS CLI
-aws ec2 describe-security-groups --group-ids sg-xxxxxx
-aws ec2 describe-network-acls --filters Name=vpc-id,Values=vpc-xxxxxx
-```
-
-### EKS Networking Modes
-
-**VPC CNI (aws-node):** Default for EKS. Each Pod gets an IP from the node's ENI secondary IPs.
-- Pods are first-class VPC citizens — no overlay
-- Pros: no encapsulation overhead, cloud security groups apply at Pod level
-- Cons: limited by ENI secondary IP capacity per instance type
-
-**Instance limits:**
-```
-c5.large: 3 ENIs × 10 secondary IPs - 1 (node) = 29 Pod IPs max
-c5.xlarge: 4 ENIs × 15 secondary IPs - 1 = 59 Pod IPs max
-c5.18xlarge: 15 ENIs × 50 secondary IPs - 1 = 749 Pod IPs max
-```
-
-**With Prefix Delegation (EKS 1.28+):** Each ENI gets /28 prefix (16 IPs) instead of individual IPs, significantly increasing Pod density.
-
-```bash
-# Check ENI and IP allocation on EKS nodes
-kubectl describe node <node> | grep "Capacity\|Allocatable" -A 10
-# Look for max-pods capacity
-
-# Check VPC CNI plugin configuration
-kubectl describe daemonset aws-node -n kube-system
-```
-
-### EKS Load Balancers
-
-**Application Load Balancer (ALB) with AWS Load Balancer Controller:**
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  annotations:
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip   # route to Pod IPs (instance targets skip kube-proxy)
-spec:
-  rules:
-  - host: api.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: api-service
-            port:
-              number: 8080
-```
-
-**`target-type: ip` vs `target-type: instance`:**
-- `instance`: ALB routes to NodePort on any node, then kube-proxy routes to Pod. Double hop.
-- `ip`: ALB routes directly to Pod IP. Requires VPC CNI. More efficient.
+Lets private workloads initiate outbound connections without being directly reachable from the internet.
 
 ---
 
-## Part 3: Cross-Cutting Concepts
+# Part 4: AWS/EKS Networking
 
-### Load Balancer Health Checks vs Kubernetes Readiness
+AWS VPCs are regional. Subnets are AZ-scoped.
 
-A critical failure mode: cloud LB reports healthy while users experience errors.
+Typical EKS layout:
 
-**How it happens:**
-1. Cloud LB health checks `GET /healthz` → returns 200 → node is "healthy"
-2. Actual request `GET /api/v1/orders` hits a Pod whose database connection is broken
-3. Pod returns 500 — but the health check path doesn't test the database
+```text
+VPC
+  public subnets  -> internet-facing load balancers, NAT gateways
+  private subnets -> EKS worker nodes
+  database subnets -> RDS/private data layer
+```
 
-**Fix:** Make health checks realistic.
+EKS usually uses AWS VPC CNI.
+
+Important behavior:
+
+- Pods receive VPC IPs
+- Pod density depends on ENI/IP capacity
+- Security groups can be used at node or Pod level depending on configuration
+- load balancers integrate through AWS Load Balancer Controller
+
+---
+
+# Part 5: Security Groups vs NACLs
+
+| Feature | Security Group | NACL |
+|---|---|---|
+| Scope | ENI/resource | subnet |
+| State | stateful | stateless |
+| Rules | allow only | allow and deny |
+| Return traffic | automatic | must be allowed |
+| Typical use | primary access control | subnet guardrail |
+
+If NACLs block ephemeral return ports, connections may appear strange or intermittent.
+
+Debug:
+
+```bash
+aws ec2 describe-security-groups
+aws ec2 describe-network-acls
+aws ec2 describe-route-tables
+```
+
+---
+
+# Part 6: EKS Pod IP Exhaustion
+
+With AWS VPC CNI, Pods consume VPC IPs.
+
+Symptoms:
+
+- Pods stuck Pending or ContainerCreating
+- CNI allocation errors
+- nodes show capacity but cannot assign Pod IPs
+
+Check:
+
+```bash
+kubectl describe node NODE
+kubectl logs -n kube-system ds/aws-node
+kubectl get pods -A -o wide
+```
+
+Fix options:
+
+- prefix delegation
+- larger instance types
+- more subnets/IP space
+- custom networking
+- Karpenter/node scaling
+
+---
+
+# Part 7: AWS Load Balancer Controller
+
+Ingress path:
+
+```text
+Route53 -> ALB -> target group -> Pod IP or NodePort -> Pod
+```
+
+Target modes:
+
+| Mode | Meaning | Tradeoff |
+|---|---|---|
+| instance | ALB targets node NodePort | extra hop through node/kube-proxy |
+| ip | ALB targets Pod IP directly | efficient, needs VPC CNI/IP routability |
+
+Common annotations:
 
 ```yaml
-# Kubernetes readiness probe that checks actual dependencies
-readinessProbe:
-  httpGet:
-    path: /ready    # endpoint that checks DB connection, cache, etc.
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 5
-  failureThreshold: 3
-
-# The /ready endpoint in your app:
-# → Connect to database: SELECT 1
-# → Check cache connection
-# → Check upstream dependencies
-# → Return 200 if all OK, 503 if any critical dependency is down
+alb.ingress.kubernetes.io/scheme: internet-facing
+alb.ingress.kubernetes.io/target-type: ip
 ```
 
-**Why "/healthz" is wrong for readiness:** Liveness checks `healthz` to know if the container is alive. Readiness checks a deeper path to know if it should receive traffic. They serve different purposes.
+---
 
-### Tracing a Packet from Internet to Pod
+# Part 8: GCP/GKE Networking
 
-Full path for a GKE external HTTPS request:
+GCP VPCs are global. Subnets are regional.
 
+GKE VPC-native clusters use secondary IP ranges:
+
+- node IP range
+- Pod IP range
+- Service IP range
+
+GKE load balancing may use NEGs.
+
+NEG means Network Endpoint Group: the cloud load balancer can target Pod IPs directly.
+
+Benefits:
+
+- per-Pod health checking
+- no NodePort double hop
+- better load distribution
+
+---
+
+# Part 9: Private Clusters
+
+Private clusters reduce public exposure.
+
+Concerns:
+
+- how does CI/CD reach the API server?
+- how do nodes pull images?
+- how do Pods reach external APIs?
+- how do alerts/webhooks leave the cluster?
+
+Solutions:
+
+- VPN/peering/Direct Connect/Interconnect
+- NAT gateway or Cloud NAT
+- private registries
+- VPC endpoints / Private Service Connect / PrivateLink
+- bastion or SSM/IAP access patterns
+
+---
+
+# Part 10: Kubernetes Ingress Across Cloud Boundaries
+
+Ingress is Kubernetes intent. Cloud controllers translate it into cloud load balancers.
+
+Flow:
+
+```text
+Ingress object -> cloud controller -> cloud LB -> target group/backend -> Service/Pod
 ```
-1. Client resolves api.example.com → GCP Anycast IP (Global LB VIP)
-2. Client connects to nearest GCP edge POP (BGP Anycast routing)
-3. GCP terminates TLS (SSL policy at LB layer)
-4. LB evaluates host/path rules → selects backend (NEG or Instance Group)
-5. LB health-checks backend — uses /healthz or custom path
-6. LB forwards to backend Pod IP (NEG mode) or Node:Port (IG mode)
-   - NEG mode: direct to Pod IP (native routing, no kube-proxy)
-   - IG mode: arrives at node, kube-proxy DNAT to Pod IP
-7. GCP VPC firewall rules evaluated on the node
-8. If NEG: packet arrives at Pod eth0 via veth
-   If IG: kube-proxy iptables DNAT, then packet reaches Pod
-9. Pod processes request and responds
+
+Failures can happen in either control plane:
+
+- Kubernetes object invalid
+- controller lacks IAM/RBAC
+- cloud quota exceeded
+- subnet tags missing
+- health check path wrong
+- Service has no endpoints
+
+---
+
+# Part 11: Health Checks And Readiness
+
+Cloud LB health checks and Kubernetes readiness must agree.
+
+Bad pattern:
+
+```text
+LB checks /healthz returns 200
+real API dependency is broken
+users get 500
 ```
 
-**Where things can break at each step:**
-- Step 3: TLS cert expired on LB
-- Step 5: Health check path returns 500 (app broken but at different path)
-- Step 7: Firewall rule missing — common when cluster is recreated without recreating fw rules
-- Step 8 (IG mode): kube-proxy hasn't updated iptables yet (endpointSlice lag)
+Better:
 
-### Private vs Public Clusters
+- liveness: process alive
+- readiness: safe to receive traffic
+- startup: app initialized
+- LB health path should align with traffic readiness where appropriate
 
-**Public cluster:** API server has a public IP. Worker nodes have external IPs (or NAT).
+During shutdown, use graceful termination and connection draining.
 
-**Private cluster:** API server only reachable from within VPC (or via peering). Worker nodes have only internal IPs.
+---
+
+# Part 12: Egress Design
+
+Pod egress path:
+
+```text
+Pod -> node/CNI datapath -> VPC route -> NAT/VPC endpoint/firewall -> external service
+```
+
+Common egress failures:
+
+- NetworkPolicy blocks DNS or HTTPS
+- NAT port exhaustion
+- missing route table entry
+- firewall/security group blocks outbound
+- external service allowlist expects NAT IP
+- private node lacks NAT or endpoint
+
+Monitor NAT connection counts, flow logs, and rejected connections.
+
+---
+
+# Part 13: DNS Across Layers
+
+DNS can involve:
+
+- CoreDNS inside cluster
+- cloud private DNS zones
+- public DNS
+- search domains
+- upstream resolvers
+
+Debug:
 
 ```bash
-# GKE private cluster: nodes have no external IP
-gcloud container clusters describe my-cluster \
-  --format='value(privateClusterConfig.enablePrivateNodes)'
-
-# Access kubectl from a bastion host inside the VPC:
-gcloud container clusters get-credentials my-cluster \
-  --internal-ip --region us-central1
+kubectl exec POD -- cat /etc/resolv.conf
+kubectl exec POD -- nslookup SERVICE.NAMESPACE.svc.cluster.local
+kubectl logs -n kube-system deploy/coredns
 ```
 
-**SRE concern with private clusters:**
-- How do CI/CD pipelines reach the API server? (Peering, VPN, or Cloud Shell tunnel)
-- How do worker nodes pull images from Docker Hub? (Cloud NAT or private image registry)
-- How do alerts reach external systems? (Egress via NAT or VPN)
+Cloud DNS failures and Kubernetes DNS failures look similar to applications. Separate them with targeted tests.
 
 ---
 
-## Part 4: Interview Questions and Strong Answers
+# Part 14: NetworkPolicy vs Cloud Firewall
 
-### Q: "Explain the difference between a Security Group and a Network ACL and when each breaks things differently."
+NetworkPolicy controls Pod-level traffic inside the cluster.
 
-"Security Groups are stateful and operate at the instance/ENI level. When you allow inbound port 443, the return traffic is automatically allowed — no rule needed. Security Groups are your primary traffic control tool for application access.
+Cloud firewall/security groups control VPC/resource-level traffic.
 
-NACLs are stateless and operate at the subnet level. They need explicit rules for both directions. If you allow inbound TCP port 443 but forget to allow outbound ephemeral ports (1024-65535), the TCP handshake succeeds but the response is dropped by the NACL. This manifests as connections that appear to establish but then hang with no data.
+A connection may require both to allow it.
 
-The operationally important difference: Security Group misconfiguration fails fast (connection refused or timeout before connecting). NACL misconfiguration can pass the TCP handshake and then silently drop data packets — much harder to diagnose because the connection appears established.
+Example:
 
-Debugging tool: VPC flow logs. They show accept/reject decisions at the VPC level and identify which layer dropped the packet."
-
----
-
-### Q: "A GKE service has healthy pods but external clients occasionally get 502 errors."
-
-"502 from a GCP load balancer means the LB reached the backend but got a bad response or the backend closed the connection unexpectedly.
-
-I would check in this order:
-
-First: Is the health check passing for backends that are actually healthy? Check the LB backend service health in Cloud Console or:
-```bash
-gcloud compute backend-services get-health my-backend-service --global
+```text
+Cloud SG allows node traffic
+NetworkPolicy blocks Pod egress
+Result: app still cannot connect
 ```
-If some backends are UNHEALTHY while the pods are Running: the LB health check path doesn't match actual pod health.
 
-Second: Are there connection draining issues? During pod termination (rolling update), the LB might still route to a terminating pod. Fix: add `preStop: sleep 15` to give LB time to drain connections before pod terminates.
+Or:
 
-Third: Are there timeout mismatches? GCP LB has a 30-second backend timeout by default. If your app takes >30s for any request, LB will 502 before the app responds.
-
-Fourth: Check pod logs for the requests that resulted in 502. GCP access logs show backend response times — correlate to pod logs."
+```text
+NetworkPolicy allows egress
+Cloud firewall blocks route to DB
+Result: app still cannot connect
+```
 
 ---
 
-## Points to Remember
+# Part 15: Observability Tools
 
-- GCP firewall rules are stateful, network-tag based; AWS Security Groups are stateful, per-ENI
-- AWS NACLs are stateless — must explicitly allow return traffic (ephemeral ports 1024-65535)
-- VPC-native GKE / EKS with VPC CNI: Pods get VPC IPs, no overlay, cloud firewall applies at Pod level
-- NEG (GCP) / `target-type: ip` (AWS ALB): LB routes directly to Pod, no double-hop through kube-proxy
-- Health check path shallowness causes "LB healthy, users unhappy" — use deep readiness probes
-- Cloud NAT required for Pods to reach internet if nodes are private
-- Private clusters: API server not reachable externally — CI/CD needs VPN/peering/tunnel
+Use the right evidence for each layer.
 
-## What to Study Next
+| Layer | Tools |
+|---|---|
+| Pod | curl, nslookup, ip route, ss |
+| Kubernetes | kubectl describe, events, EndpointSlice, CNI logs |
+| Node | iptables, ip route, tcpdump, conntrack, journalctl |
+| Cloud | flow logs, LB target health, route tables, firewall logs |
+| eBPF/Cilium | Hubble, cilium endpoint/service/policy commands |
 
-- [06-kubernetes-networking-deep-dive.md](./06-kubernetes-networking-deep-dive.md) — Kubernetes-side networking details
-- [01-networking-fundamentals.md](./01-networking-fundamentals.md) — TCP/IP underpinning
-- [nebius/02-kubernetes-cilium-production.md](../nebius/02-kubernetes-cilium-production.md) — Cilium as the CNI
+---
+
+# Part 16: Troubleshooting By Symptom
+
+## External Users Get 502
+
+Check:
+
+- LB target/backend health
+- Ingress rules
+- Service endpoints
+- readiness probe
+- app logs
+- connection draining
+
+## Pods Cannot Reach Internet
+
+Check:
+
+- DNS
+- NetworkPolicy egress
+- route table
+- NAT gateway/Cloud NAT
+- VPC endpoints
+- external allowlist
+
+## Only One Node Has Failures
+
+Check:
+
+- CNI pod on that node
+- node routes
+- conntrack table
+- security group/ENI state
+- kubelet events
+
+## Service Works By Pod IP But Not Service Name
+
+Check:
+
+- CoreDNS
+- Service object
+- EndpointSlice
+- kube-proxy/eBPF datapath
+
+## Cloud LB Healthy But Users See Errors
+
+Check:
+
+- health check shallowness
+- app dependency health
+- real user path vs health path
+- target group distribution
+
+---
+
+# Part 17: Real Incident Stories
+
+## Custom Firewall Blocked Health Checks
+
+Symptoms:
+
+- cloud LB marks targets unhealthy
+- Pods are Running and Ready
+
+Fix:
+
+- allow cloud health check ranges
+- validate target health after change
+
+## EKS Pods Could Not Schedule
+
+Cause:
+
+- no available Pod IPs despite node CPU/memory availability
+
+Fix:
+
+- prefix delegation
+- expand subnet CIDRs
+- adjust instance families
+
+## Private Cluster CI/CD Broke
+
+Cause:
+
+- pipeline runner could not reach private API server
+
+Fix:
+
+- private runner network path
+- VPN/peering
+- GitOps controller inside cluster
+
+## External API Calls Failed After Egress Change
+
+Cause:
+
+- NAT IP changed but external vendor allowlist did not
+
+Fix:
+
+- stable egress IPs
+- change management with external dependency owners
+
+---
+
+# Part 18: Command Interpretation Table
+
+| Command/tool | What it answers | Bad signs |
+|---|---|---|
+| `kubectl get endpointslice` | are there ready backends? | empty endpoints |
+| `kubectl describe ingress` | controller/LB events | invalid annotation, no address |
+| `kubectl logs CNI` | Pod networking health | IP allocation errors |
+| `aws ec2 describe-route-tables` | AWS next hops | missing NAT/IGW route |
+| `gcloud compute firewall-rules list` | GCP firewall policy | missing health check allow |
+| VPC Flow Logs | accept/reject evidence | rejects on expected path |
+| LB target health | backend health | unhealthy or draining targets |
+| `tcpdump` | packet truth | SYN no SYN-ACK, resets |
+
+---
+
+# Part 19: Labs
+
+## Beginner
+
+- draw traffic path from internet to Pod
+- inspect Service, Ingress, EndpointSlice
+- test DNS from inside Pod
+
+## Intermediate
+
+- break Service selector and restore it
+- simulate blocked egress with NetworkPolicy
+- inspect cloud LB target health
+- compare Pod IP vs Service access
+
+## Advanced
+
+- debug EKS pod IP exhaustion scenario
+- inspect VPC flow logs for rejected traffic
+- test private cluster API access path
+- compare ALB instance vs IP target mode
+- design stable egress IP for vendor allowlist
+
+---
+
+# Part 20: Interview Questions
+
+- What is the difference between VPC networking and Kubernetes networking?
+- How does traffic reach a Pod from the internet?
+- Security group vs NACL?
+- Why can a cloud LB be healthy while users see errors?
+- What causes EKS pod IP exhaustion?
+- What is the difference between ALB target-type instance and ip?
+- How would you debug Pods unable to reach the internet?
+- How do private clusters affect CI/CD?
+
+---
+
+# Part 21: Senior Answer Shape
+
+> I separate cloud networking from Kubernetes networking first. For an external request, I trace DNS, cloud load balancer, firewall/security group, node or Pod target, Service/EndpointSlice, CNI datapath, and application readiness. If Pod IP works but Service fails, I focus on Kubernetes Service/datapath. If traffic never reaches the node or target, I focus on cloud routes, firewalls, health checks, and load balancer target health. I always verify with flow logs, events, endpoint state, and packet-level evidence instead of guessing.
+
+---
+
+# Recall Prompts
+
+- Why are there two networking layers in cloud Kubernetes?
+- Why do private clusters require special CI/CD design?
+- Why can Pod CPU/memory be available but Pod IPs exhausted?
+- Why should health checks align with readiness?
+- Why do flow logs help when Kubernetes events look clean?
