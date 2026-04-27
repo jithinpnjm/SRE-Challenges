@@ -1,601 +1,489 @@
-# Python for SRE and Automation
+# Foundations: Python Zero To Hero For SRE And Platform Engineers
 
-> Python is the SRE's second language after Bash — used when shell scripting becomes too fragile, when you need structured data handling, retries, tests, or API integration. At senior/staff level, you are expected to write production-quality Python tooling, not just one-off scripts.
+Python is the language you reach for when Bash becomes too fragile.
 
----
+For SRE work, Python is not mainly about algorithms. It is about writing reliable automation: tools that call APIs, parse structured data, inspect systems, retry safely, log clearly, and fail predictably.
 
-## What Is It and Why It Matters
+This guide is designed as a complete path:
 
-Python is a high-level, interpreted language with an enormous standard library and ecosystem. For SRE work, it excels at:
-- Automation tools that would be unwieldy in Bash (complex logic, error handling, testing)
-- API clients and integrations (Kubernetes, cloud providers, monitoring systems)
-- Log and data processing at scale
-- Operational tooling that needs to be maintained by multiple people over time
-
-**When to use Python over Bash:**
-- Logic is complex (nested conditions, multiple failure modes)
-- You need structured data (JSON, CSV, YAML parsing)
-- You need HTTP calls with retries, timeouts, auth
-- You need the script to be testable
-- Other people need to maintain this code
+- Beginner: Python syntax, data structures, files, functions
+- Intermediate: JSON/YAML, HTTP APIs, subprocesses, logging, exceptions
+- Advanced: retries, concurrency, CLIs, testing, packaging, type hints
+- SRE Level: Kubernetes/cloud automation, health checks, incident tooling
+- Interview Level: explain when Python beats Bash and how to design maintainable ops tools
 
 ---
 
-## Mental Model
+# Part 1: What Python Is For In SRE
 
-Python for SRE is not about writing algorithms — it is about writing **reliable automation**. Reliable means:
-- Handles errors gracefully (every external call can fail)
-- Has explicit timeouts (never hangs indefinitely)
-- Has structured logging (know what it did and when)
-- Exits with correct exit codes (composable in pipelines)
-- Is idempotent when appropriate (safe to run multiple times)
+Use Python when you need:
+
+- structured data handling
+- API integration
+- complex branching logic
+- maintainable automation
+- tests
+- retries and timeouts
+- reusable internal tools
+
+Use Bash when you are mostly chaining commands.
+
+Use Python when logic becomes a program.
 
 ---
 
-## Part 1: The Foundation (Beginner)
+# Part 2: Beginner Python Foundations
 
-### Python Type System and Data Structures
+## Variables And Types
 
 ```python
-# Strings — immutable
-host = "web-01.prod.example.com"
-parts = host.split(".")           # ['web-01', 'prod', 'example', 'com']
-hostname = ".".join(parts[:2])    # 'web-01.prod'
-upper = host.upper()
-starts = host.startswith("web")   # True
-contains = "prod" in host         # True
-
-# f-strings — preferred for formatting
-pod_name = "web-app"
-namespace = "production"
-msg = f"Pod {pod_name} in namespace {namespace} is starting"
-
-# Lists
-pods = ["web-01", "web-02", "web-03"]
-pods.append("web-04")
-pods.extend(["web-05", "web-06"])
-first = pods[0]
-last = pods[-1]
-slice_ = pods[1:3]                # ["web-02", "web-03"]
-
-# Dictionaries — O(1) lookup
-node_status = {
-    "web-01": "healthy",
-    "web-02": "degraded",
-    "web-03": "healthy",
-}
-status = node_status.get("web-04", "unknown")  # default if key missing
-
-# Sets — for uniqueness and membership testing
-active = {"web-01", "web-02", "web-03"}
-expected = {"web-01", "web-02", "web-03", "web-04"}
-missing = expected - active      # {"web-04"} — set difference
-
-# Comprehensions
-healthy = [h for h in node_status if node_status[h] == "healthy"]
-counts = {host: len(host) for host in pods}
+service = "checkout"
+replicas = 3
+healthy = True
+latency_ms = 245.7
 ```
 
-### File I/O
+Python is dynamically typed, but values still have real types.
+
+```python
+print(type(service))
+print(type(replicas))
+```
+
+## Strings
+
+```python
+host = "web-01.prod.example.com"
+print(host.upper())
+print(host.startswith("web"))
+print("prod" in host)
+parts = host.split(".")
+```
+
+## f-strings
+
+```python
+namespace = "production"
+pod = "api-7d9f"
+print(f"Checking {namespace}/{pod}")
+```
+
+---
+
+# Part 3: Core Data Structures
+
+## Lists
+
+```python
+pods = ["api-1", "api-2"]
+pods.append("api-3")
+for pod in pods:
+    print(pod)
+```
+
+## Dictionaries
+
+```python
+status = {
+    "api-1": "Running",
+    "api-2": "CrashLoopBackOff",
+}
+print(status.get("api-3", "Unknown"))
+```
+
+## Sets
+
+```python
+expected = {"api-1", "api-2", "api-3"}
+actual = {"api-1", "api-2"}
+missing = expected - actual
+```
+
+## Comprehensions
+
+```python
+healthy = [name for name, phase in status.items() if phase == "Running"]
+```
+
+---
+
+# Part 4: Functions And Program Structure
+
+```python
+def is_healthy(status_code: int) -> bool:
+    return 200 <= status_code < 300
+```
+
+Use functions when a block of logic has a name.
+
+Good SRE tools are built from small testable functions.
+
+---
+
+# Part 5: Files, Paths, JSON, YAML
+
+## pathlib
 
 ```python
 from pathlib import Path
-import json
 
-# Read file
-config_path = Path("/etc/myapp/config.json")
-if not config_path.exists():
-    raise FileNotFoundError(f"Config not found: {config_path}")
-
-config = json.loads(config_path.read_text())
-
-# Write file atomically (write to temp, then rename)
-import tempfile, os
-
-def write_atomically(path: Path, content: str) -> None:
-    """Write to a temp file then rename — prevents partial writes."""
-    with tempfile.NamedTemporaryFile(
-        mode='w',
-        dir=path.parent,
-        delete=False,
-        suffix='.tmp'
-    ) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-    os.replace(tmp_path, path)  # atomic on same filesystem
-
-# Read line by line (memory efficient for large files)
-def count_errors(log_path: Path) -> int:
-    count = 0
-    with open(log_path) as f:
-        for line in f:       # generator — reads one line at a time
-            if "ERROR" in line:
-                count += 1
-    return count
+path = Path("/var/log/app.log")
+if path.exists():
+    print(path.read_text()[:1000])
 ```
 
-### Exception Handling
+## JSON
 
 ```python
-import logging
+import json
 
-# Be specific about what you catch
-try:
-    result = risky_operation()
-except FileNotFoundError as e:
-    logging.error("Config file missing: %s", e)
-    sys.exit(1)
-except PermissionError as e:
-    logging.error("Permission denied: %s", e)
-    sys.exit(1)
-except Exception as e:
-    # Last resort — log the type to help debugging
-    logging.exception("Unexpected error in risky_operation")
-    sys.exit(1)
-finally:
-    cleanup()  # always runs
-
-# Custom exceptions for your tools
-class HealthCheckError(Exception):
-    """Raised when a health check fails."""
-    def __init__(self, endpoint: str, status: int):
-        self.endpoint = endpoint
-        self.status = status
-        super().__init__(f"Health check failed: {endpoint} returned {status}")
+raw = '{"service":"api","replicas":3}'
+data = json.loads(raw)
+print(data["service"])
 ```
+
+## YAML
+
+```python
+import yaml
+from pathlib import Path
+
+manifest = yaml.safe_load(Path("deployment.yaml").read_text())
+print(manifest["kind"])
+```
+
+Use YAML for Kubernetes/Terraform-adjacent config, but parse it carefully.
 
 ---
 
-## Part 2: Production Patterns (Intermediate)
+# Part 6: Exceptions And Exit Codes
 
-### Structured Logging
+External systems fail. Files disappear. APIs timeout. Permissions break.
+
+```python
+import sys
+import logging
+
+try:
+    data = Path("config.json").read_text()
+except FileNotFoundError:
+    logging.error("config.json missing")
+    sys.exit(1)
+```
+
+Rules:
+
+- catch specific exceptions first
+- log useful context
+- exit non-zero on failure
+- avoid swallowing errors silently
+
+---
+
+# Part 7: Logging Like An Operator
 
 ```python
 import logging
-import json
-import sys
-from datetime import datetime, timezone
 
-class JSONFormatter(logging.Formatter):
-    """Emit log records as JSON lines — useful for log aggregation (Loki, ELK)."""
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "line": record.lineno,
-        }
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_entry)
-
-def setup_logging(level: str = "INFO") -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JSONFormatter())
-    logging.root.setLevel(getattr(logging, level.upper()))
-    logging.root.addHandler(handler)
-
-# Usage
-setup_logging()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 logger = logging.getLogger(__name__)
-logger.info("Starting health check", extra={"target": "api.example.com"})
-logger.error("Check failed", extra={"status_code": 503, "latency_ms": 5200})
+
+logger.info("starting health check")
+logger.error("service unhealthy", extra={"service": "checkout"})
 ```
 
-### HTTP Calls with Timeouts and Retries
+For production tools, logs should answer:
+
+- what happened?
+- where?
+- when?
+- what input?
+- what action was taken?
+
+---
+
+# Part 8: Running Commands Safely
+
+Use `subprocess.run` with list arguments.
+
+```python
+import subprocess
+
+result = subprocess.run(
+    ["kubectl", "get", "pods", "-o", "json"],
+    capture_output=True,
+    text=True,
+    timeout=30,
+    check=True,
+)
+print(result.stdout)
+```
+
+Avoid `shell=True` unless you fully control the command.
+
+---
+
+# Part 9: HTTP APIs With Timeouts
 
 ```python
 import urllib.request
-import urllib.error
-import time
-import random
-import logging
-from dataclasses import dataclass
-from typing import Optional
 
-@dataclass
-class HTTPResponse:
-    status_code: int
-    body: bytes
-    latency_ms: float
-
-def http_get(
-    url: str,
-    timeout_s: float = 10.0,
-    headers: Optional[dict] = None,
-) -> HTTPResponse:
-    """Single HTTP GET with timeout."""
-    req = urllib.request.Request(url, headers=headers or {})
-    start = time.monotonic()
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        body = resp.read()
-        return HTTPResponse(
-            status_code=resp.status,
-            body=body,
-            latency_ms=(time.monotonic() - start) * 1000
-        )
-
-def http_get_with_retry(
-    url: str,
-    max_attempts: int = 3,
-    base_delay_s: float = 1.0,
-    max_delay_s: float = 30.0,
-    timeout_s: float = 10.0,
-) -> HTTPResponse:
-    """HTTP GET with exponential backoff and full jitter."""
-    last_exc: Optional[Exception] = None
-    
-    for attempt in range(max_attempts):
-        try:
-            return http_get(url, timeout_s=timeout_s)
-        except (urllib.error.URLError, TimeoutError) as e:
-            last_exc = e
-            if attempt < max_attempts - 1:
-                delay = min(base_delay_s * (2 ** attempt), max_delay_s)
-                jitter = random.uniform(0, delay)
-                logging.warning(
-                    "Attempt %d/%d failed for %s (%s). Retrying in %.1fs",
-                    attempt + 1, max_attempts, url, e, jitter
-                )
-                time.sleep(jitter)
-    
-    raise RuntimeError(f"All {max_attempts} attempts failed for {url}") from last_exc
+with urllib.request.urlopen("https://example.com", timeout=5) as resp:
+    body = resp.read()
+    print(resp.status)
 ```
 
-### Running Shell Commands
-
-```python
-import subprocess
-import logging
-from typing import Optional
-
-def run_command(
-    cmd: list[str],
-    timeout_s: float = 30.0,
-    check: bool = True,
-    capture: bool = True,
-) -> subprocess.CompletedProcess:
-    """
-    Run a command safely.
-    
-    ALWAYS use list form (not shell=True) to prevent injection.
-    """
-    logging.debug("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd,                          # list — no shell injection
-        capture_output=capture,
-        text=True,
-        timeout=timeout_s,
-        check=check,                  # raises CalledProcessError on non-zero
-    )
-    return result
-
-def kubectl(
-    *args: str,
-    namespace: Optional[str] = None,
-    timeout_s: float = 30.0,
-) -> str:
-    """Run kubectl and return stdout."""
-    cmd = ["kubectl"]
-    if namespace:
-        cmd += ["-n", namespace]
-    cmd += list(args)
-    result = run_command(cmd, timeout_s=timeout_s)
-    return result.stdout
-
-# Usage
-pods_json = kubectl("get", "pods", "-o", "json", namespace="production")
-pods = json.loads(pods_json)
-```
-
-### Dataclasses for Structured Data
-
-```python
-from dataclasses import dataclass, field
-from typing import Optional
-from datetime import datetime
-
-@dataclass
-class PodHealth:
-    name: str
-    namespace: str
-    phase: str
-    ready: bool
-    restart_count: int
-    node: str
-    last_checked: datetime = field(default_factory=datetime.utcnow)
-    error: Optional[str] = None
-
-    def is_healthy(self) -> bool:
-        return self.phase == "Running" and self.ready and self.restart_count < 10
-
-    def __str__(self) -> str:
-        status = "healthy" if self.is_healthy() else "UNHEALTHY"
-        return f"{self.namespace}/{self.name} [{self.phase}] {status}"
-
-def get_pod_health(pod_data: dict) -> PodHealth:
-    """Parse Kubernetes pod JSON into a typed object."""
-    meta = pod_data["metadata"]
-    status = pod_data.get("status", {})
-    containers = status.get("containerStatuses", [])
-    
-    ready = all(c.get("ready", False) for c in containers)
-    restarts = sum(c.get("restartCount", 0) for c in containers)
-    
-    return PodHealth(
-        name=meta["name"],
-        namespace=meta.get("namespace", "default"),
-        phase=status.get("phase", "Unknown"),
-        ready=ready,
-        restart_count=restarts,
-        node=spec.get("nodeName", "unknown") if (spec := pod_data.get("spec")) else "unknown",
-    )
-```
-
-### Context Managers
-
-```python
-from contextlib import contextmanager, suppress
-import os
-import tempfile
-
-@contextmanager
-def temp_kubeconfig(cluster_config: dict):
-    """Write a temporary kubeconfig file, clean up after use."""
-    with tempfile.NamedTemporaryFile(
-        mode='w', suffix='.yaml', delete=False
-    ) as f:
-        import yaml
-        yaml.dump(cluster_config, f)
-        kubeconfig_path = f.name
-    
-    original = os.environ.get("KUBECONFIG")
-    os.environ["KUBECONFIG"] = kubeconfig_path
-    try:
-        yield kubeconfig_path
-    finally:
-        os.environ.pop("KUBECONFIG")
-        if original:
-            os.environ["KUBECONFIG"] = original
-        with suppress(FileNotFoundError):
-            os.unlink(kubeconfig_path)
-
-# Usage
-with temp_kubeconfig(cluster_cfg) as kc:
-    result = kubectl("get", "nodes")
-# kubeconfig is cleaned up here regardless of what happened inside
-```
+Always set timeouts. A production tool that can hang forever is dangerous.
 
 ---
 
-## Part 3: SRE-Specific Tools (Advanced)
+# Part 10: Retries And Backoff
 
-### Kubernetes Event Monitor
-
-```python
-#!/usr/bin/env python3
-"""
-Watch Kubernetes events and report warnings by namespace.
-Demonstrates: subprocess, JSON parsing, collections, structured output.
-"""
-import argparse
-import collections
-import json
-import logging
-import subprocess
-import sys
-from dataclasses import dataclass
-from typing import Iterator
-
-@dataclass
-class K8sEvent:
-    namespace: str
-    name: str
-    reason: str
-    message: str
-    count: int
-    kind: str
-
-def get_events(namespace: str = "--all-namespaces") -> list[dict]:
-    cmd = ["kubectl", "get", "events", namespace, "-o", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)["items"]
-
-def parse_warnings(events: list[dict]) -> Iterator[K8sEvent]:
-    for e in events:
-        if e.get("type") != "Warning":
-            continue
-        meta = e["metadata"]
-        yield K8sEvent(
-            namespace=meta.get("namespace", "default"),
-            name=meta.get("name", ""),
-            reason=e.get("reason", "Unknown"),
-            message=e.get("message", ""),
-            count=e.get("count", 1),
-            kind=e.get("involvedObject", {}).get("kind", ""),
-        )
-
-def summarize(events: Iterator[K8sEvent]) -> dict:
-    by_ns = collections.defaultdict(collections.Counter)
-    for event in events:
-        by_ns[event.namespace][event.reason] += event.count
-    return dict(by_ns)
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Kubernetes warning event summarizer")
-    parser.add_argument("-n", "--namespace", default="--all-namespaces")
-    parser.add_argument("--top", type=int, default=10)
-    args = parser.parse_args()
-
-    try:
-        raw_events = get_events(args.namespace)
-    except subprocess.CalledProcessError as e:
-        logging.error("kubectl failed: %s", e.stderr)
-        return 1
-    except json.JSONDecodeError as e:
-        logging.error("Failed to parse kubectl output: %s", e)
-        return 1
-
-    summary = summarize(parse_warnings(raw_events))
-
-    for namespace, reasons in sorted(summary.items()):
-        print(f"\n{namespace}:")
-        for reason, count in reasons.most_common(args.top):
-            print(f"  {reason:30s} {count:5d}")
-
-    return 0
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING)
-    sys.exit(main())
-```
-
-### Retry Decorator
+Retries help with transient failures. Bad retries amplify outages.
 
 ```python
-import functools
-import logging
 import random
 import time
-from typing import Callable, Tuple, Type, TypeVar
 
-F = TypeVar("F", bound=Callable)
-
-def retry(
-    max_attempts: int = 3,
-    base_delay: float = 1.0,
-    max_delay: float = 60.0,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-) -> Callable[[F], F]:
-    """
-    Retry decorator with full-jitter exponential backoff.
-    
-    Usage:
-        @retry(max_attempts=5, exceptions=(IOError, TimeoutError))
-        def connect_to_db():
-            ...
-    """
-    def decorator(func: F) -> F:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exc: Optional[Exception] = None
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as e:
-                    last_exc = e
-                    if attempt == max_attempts - 1:
-                        break
-                    delay = min(base_delay * (2 ** attempt), max_delay)
-                    jitter = random.uniform(0, delay)
-                    logging.warning(
-                        "%s attempt %d/%d failed (%s). Retry in %.1fs",
-                        func.__name__, attempt + 1, max_attempts, e, jitter
-                    )
-                    time.sleep(jitter)
-            raise last_exc  # type: ignore
-        return wrapper  # type: ignore
-    return decorator
+def retry(fn, attempts=3, base_delay=1.0):
+    last_error = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last_error = e
+            if i == attempts - 1:
+                break
+            delay = random.uniform(0, base_delay * (2 ** i))
+            time.sleep(delay)
+    raise last_error
 ```
 
-### Parallel Health Checks
+Use jitter to avoid thundering herds.
+
+---
+
+# Part 11: Dataclasses And Type Hints
 
 ```python
-import concurrent.futures
-import logging
-from typing import NamedTuple
+from dataclasses import dataclass
 
-class CheckResult(NamedTuple):
-    host: str
-    healthy: bool
+@dataclass
+class CheckResult:
+    target: str
+    ok: bool
     latency_ms: float
     error: str = ""
-
-def check_host(host: str, port: int = 443, timeout_s: float = 5.0) -> CheckResult:
-    import socket
-    start = time.monotonic()
-    try:
-        with socket.create_connection((host, port), timeout=timeout_s):
-            latency_ms = (time.monotonic() - start) * 1000
-            return CheckResult(host=host, healthy=True, latency_ms=latency_ms)
-    except (socket.timeout, ConnectionRefusedError, OSError) as e:
-        latency_ms = (time.monotonic() - start) * 1000
-        return CheckResult(host=host, healthy=False, latency_ms=latency_ms, error=str(e))
-
-def check_all_hosts(hosts: list[str], port: int = 443, workers: int = 10) -> list[CheckResult]:
-    """Check multiple hosts in parallel."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(check_host, h, port): h for h in hosts}
-        results = []
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                host = futures[future]
-                logging.error("Unexpected error checking %s: %s", host, e)
-                results.append(CheckResult(host=host, healthy=False, latency_ms=0, error=str(e)))
-    return sorted(results, key=lambda r: r.host)
 ```
+
+Type hints help future you and teammates understand the tool.
 
 ---
 
-## Part 4: Testing Your SRE Tools
+# Part 12: Building CLIs
 
 ```python
-import pytest
-from unittest.mock import patch, MagicMock
+import argparse
 
-# Test the health checker
-def test_check_host_success():
-    with patch("socket.create_connection") as mock_conn:
-        mock_conn.return_value.__enter__ = MagicMock()
-        mock_conn.return_value.__exit__ = MagicMock(return_value=False)
-        result = check_host("web-01", port=80)
-    assert result.healthy is True
-    assert result.error == ""
-
-def test_check_host_timeout():
-    import socket
-    with patch("socket.create_connection", side_effect=socket.timeout("timed out")):
-        result = check_host("web-01", port=80)
-    assert result.healthy is False
-    assert "timed out" in result.error
-
-# Test retry decorator
-def test_retry_success_on_third_attempt():
-    call_count = 0
-    
-    @retry(max_attempts=3, base_delay=0.01)
-    def flaky():
-        nonlocal call_count
-        call_count += 1
-        if call_count < 3:
-            raise IOError("not yet")
-        return "success"
-    
-    result = flaky()
-    assert result == "success"
-    assert call_count == 3
+parser = argparse.ArgumentParser(description="Check service health")
+parser.add_argument("url")
+parser.add_argument("--timeout", type=float, default=5.0)
+args = parser.parse_args()
 ```
+
+Good CLIs include:
+
+- help text
+- clear flags
+- useful exit codes
+- readable output
 
 ---
 
-## Points to Remember
+# Part 13: Concurrency For SRE Tools
 
-- `time.monotonic()` for latency measurement — immune to clock changes
-- Full jitter backoff: `random.uniform(0, delay)` — prevents thundering herd
-- Use list args in `subprocess.run()` — never `shell=True` with user input
-- `@dataclass` for structured data — cleaner than plain dicts, self-documenting
-- Context managers (`with`) for resources — guarantees cleanup even on exceptions
-- `concurrent.futures.ThreadPoolExecutor` for parallel I/O — network calls, not CPU work
-- `pathlib.Path` over `os.path` — modern, readable, OS-independent
-- Always provide `timeout` on network calls — never block indefinitely
-- Exit code 0 = success, non-zero = failure — composable in shell pipelines
+Use threads for network IO.
 
-## What to Study Next
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-- [03-bash-and-shell-scripting.md](./03-bash-and-shell-scripting.md) — when Bash is better than Python
-- [nebius/05-coding-algorithms.md](../nebius/05-coding-algorithms.md) — Python in an interview setting
-- Hands-on labs: [../hands-on-labs/python/](../hands-on-labs/python/)
+hosts = ["example.com", "github.com"]
+
+def check(host):
+    return host
+
+with ThreadPoolExecutor(max_workers=10) as pool:
+    futures = [pool.submit(check, h) for h in hosts]
+    for future in as_completed(futures):
+        print(future.result())
+```
+
+Do not create unlimited workers. You can overload the system you are checking.
+
+---
+
+# Part 14: Kubernetes Automation Example
+
+```python
+import json
+import subprocess
+
+result = subprocess.run(
+    ["kubectl", "get", "pods", "-A", "-o", "json"],
+    capture_output=True,
+    text=True,
+    check=True,
+)
+
+data = json.loads(result.stdout)
+for pod in data["items"]:
+    name = pod["metadata"]["name"]
+    ns = pod["metadata"].get("namespace", "default")
+    phase = pod.get("status", {}).get("phase", "Unknown")
+    if phase != "Running":
+        print(f"{ns}/{name}: {phase}")
+```
+
+This is where Python beats Bash: structured parsing and clear logic.
+
+---
+
+# Part 15: Testing SRE Tools
+
+```python
+def is_success(code: int) -> bool:
+    return 200 <= code < 300
+
+
+def test_is_success():
+    assert is_success(200)
+    assert is_success(204)
+    assert not is_success(500)
+```
+
+Testing matters when tools can affect production.
+
+Use:
+
+- pytest
+- unittest.mock
+- small pure functions
+- sample JSON fixtures
+
+---
+
+# Part 16: Packaging And Project Structure
+
+A simple SRE tool can be structured like:
+
+```text
+healthcheck/
+  pyproject.toml
+  src/healthcheck/__init__.py
+  src/healthcheck/cli.py
+  src/healthcheck/checks.py
+  tests/test_checks.py
+```
+
+This makes the tool maintainable.
+
+---
+
+# Part 17: Real Incident Stories
+
+## Bash Script Became Unmaintainable
+
+Symptoms:
+
+- many nested `if` blocks
+- JSON parsed with grep
+- no tests
+- inconsistent failures
+
+Better path:
+
+- rewrite as Python CLI
+- parse JSON properly
+- add tests
+- add logging and timeouts
+
+## Health Checker Hung During Incident
+
+Cause:
+
+- no HTTP timeout
+
+Fix:
+
+- every network call gets timeout
+- retries use bounded backoff
+- tool exits non-zero on failure
+
+## Kubernetes Audit Needed Quickly
+
+Python can list all pods, group by namespace, summarize restarts, and print actionable output.
+
+---
+
+# Part 18: Bash Vs Python Decision Table
+
+| Use Bash | Use Python |
+|---|---|
+| simple command chaining | complex logic |
+| one-liners | reusable tool |
+| text streams | JSON/YAML/API data |
+| quick runbook steps | tests and maintainability |
+| shell-native operations | structured error handling |
+
+---
+
+# Part 19: Interview Questions
+
+- When would you replace Bash with Python?
+- Why are timeouts mandatory?
+- How would you design a Kubernetes health-check tool?
+- Why avoid `shell=True`?
+- How do you test automation safely?
+- How do you prevent retries from making outages worse?
+
+---
+
+# Part 20: Labs
+
+## Beginner
+
+- read a file and count error lines
+- parse JSON
+- write a simple CLI
+
+## Intermediate
+
+- call an HTTP endpoint with timeout
+- run `kubectl` and parse JSON
+- summarize pod states
+
+## Advanced
+
+- add retry/backoff
+- run parallel health checks
+- write pytest tests
+- package as a CLI tool
+
+---
+
+# Part 21: Senior Answer Shape
+
+> I use Python when operational automation needs structure: APIs, JSON/YAML parsing, retries, timeouts, tests, and maintainability. I avoid shell injection by using subprocess list arguments, set explicit timeouts for every external call, log meaningful context, and design tools with clear exit codes so they fit into CI/CD and runbooks.
+
+---
+
+# Recall Prompts
+
+- Why is Python better than Bash for JSON-heavy workflows?
+- Why should every network call have a timeout?
+- Why is `shell=True` dangerous?
+- What makes an SRE tool production-quality?
+- How do retries create risk during outages?
