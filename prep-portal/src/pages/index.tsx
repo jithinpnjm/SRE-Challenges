@@ -7,41 +7,45 @@ import AnswerCallout from '@site/src/components/AnswerCallout';
 
 import styles from './index.module.css';
 
+const memoryPalaces = [
+  {title: 'Linux', place: 'Hospital', description: 'CPU as doctors, memory as beds, logs as charts, systemd as operations manager.', to: '/docs/foundations/linux-and-network-administration'},
+  {title: 'Networking', place: 'Hotel', description: 'DNS as front desk, ports as doors, routes as hallways, firewalls as security guards.', to: '/docs/foundations/networking-fundamentals'},
+  {title: 'Kubernetes', place: 'City', description: 'Nodes as buildings, pods as apartments, Services as public numbers, CNI as roads.', to: '/docs/foundations/kubernetes-networking-deep-dive'},
+  {title: 'Observability', place: 'Emergency Room', description: 'Metrics as vitals, traces as patient journeys, alerts as alarms, postmortems as case reviews.', to: '/docs/foundations/observability-slos-and-incident-response'},
+  {title: 'CI/CD', place: 'Factory', description: 'Commits as raw material, tests as inspection, registry as warehouse, rollback as recall.', to: '/docs/foundations/cicd-trusted-delivery-and-platform-security'},
+  {title: 'Terraform', place: 'City Planner', description: 'Code as blueprints, state as the city ledger, drift as illegal construction.', to: '/docs/foundations/terraform-infrastructure-as-code'},
+  {title: 'Cloud Design', place: 'Airport Grid', description: 'Regions as hubs, AZs as terminals, load balancers as traffic control, DBs as records offices.', to: '/docs/foundations/system-design-cloud-architecture'},
+];
+
 const phases = [
   {
-    title: '1. Linux, networking, and host fundamentals',
-    description:
-      'Build the base layer: processes, memory, filesystems, DNS, TCP, TLS, HTTP, routing, firewalls, and host triage.',
+    title: '1. Foundations Core',
+    description: 'Master host, packet, and debugging fundamentals before touching higher-level platforms.',
     to: '/docs/learning-path#phase-1-linux-networking-and-host-fundamentals',
   },
   {
-    title: '2. Kubernetes and containers',
-    description:
-      'Understand pods, services, ingress, CNI, kubelet, containerd, manifests, operators, and GPU platform patterns.',
+    title: '2. Kubernetes & Containers',
+    description: 'Learn pods, services, ingress, CNI, kubelet, container runtime, manifests, and operators.',
     to: '/docs/learning-path#phase-2-kubernetes-and-containers',
   },
   {
-    title: '3. Observability and incidents',
-    description:
-      'Learn SLOs, Prometheus, Grafana, Alertmanager, incident command, troubleshooting loops, and post-incident learning.',
+    title: '3. Reliability & Incidents',
+    description: 'Use SLOs, alerts, dashboards, traces, and incident command to operate real systems.',
     to: '/docs/learning-path#phase-3-observability-slos-and-incident-response',
   },
   {
-    title: '4. Cloud, architecture, and delivery',
-    description:
-      'Connect VPCs, compute, storage, Terraform, CI/CD, GitOps, security gates, rollout safety, and system design.',
+    title: '4. Cloud, IaC & Delivery',
+    description: 'Design platforms with cloud architecture, Terraform, CI/CD, GitOps, and rollout safety.',
     to: '/docs/learning-path#phase-4-cloud-architecture-infrastructure-and-delivery',
   },
   {
-    title: '5. Automation and platform services',
-    description:
-      'Use Bash, Python, Ansible, Kafka, SQL, HTTP, proxies, and quality gates as operational building blocks.',
+    title: '5. Automation & Platform Services',
+    description: 'Use Bash, Python, Ansible, Kafka, SQL, APIs, proxies, and quality gates operationally.',
     to: '/docs/learning-path#phase-5-automation-data-and-platform-services',
   },
   {
-    title: '6. Synthesis and staff-level reasoning',
-    description:
-      'Combine all layers into end-to-end production designs with tradeoffs, failure modes, operations, and leadership depth.',
+    title: '6. Staff-Level Synthesis',
+    description: 'Combine design, operations, reliability, security, cost, tradeoffs, and leadership judgment.',
     to: '/docs/learning-path#phase-6-synthesis-capstone-and-staff-level-reasoning',
   },
 ];
@@ -51,21 +55,22 @@ function HomepageHeader() {
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
         <Heading as="h1" className="hero__title">
-          SRE Study Guide
+          Learn SRE Like Real Systems
         </Heading>
         <p className="hero__subtitle">
-          One canonical learning path for SRE and platform engineering: from Linux and networking basics to Kubernetes,
-          observability, cloud architecture, delivery systems, automation, and staff-level design.
+          A memory-first SRE and platform engineering study system: Linux as a hospital, networking as a hotel,
+          Kubernetes as a city, observability as an emergency room, CI/CD as a factory, Terraform as city planning,
+          and cloud architecture as a global airport grid.
         </p>
         <div className={styles.buttons}>
           <Link className="button button--secondary button--lg" to="/docs/learning-path">
-            Start With The Roadmap
+            Start The Roadmap
           </Link>
-          <Link className="button button--primary button--lg" to="/docs/foundations/linux-and-network-administration">
-            Begin Foundations
+          <Link className="button button--primary button--lg" to="/docs/memory-palace">
+            Open Memory Palace
           </Link>
           <Link className="button button--outline button--lg margin-left--sm" to="/workspace">
-            Practice Workspace
+            Practice Answers
           </Link>
         </div>
       </div>
@@ -77,26 +82,41 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title="SRE Study Guide"
-      description="A canonical SRE and platform engineering learning system from basics to advanced practice.">
+      description="A memory-first SRE and platform engineering learning system from Linux fundamentals to staff-level design.">
       <HomepageHeader />
       <main>
         <section className="container margin-top--lg margin-bottom--xl">
           <div className="portal-banner margin-bottom--lg">
-            <Heading as="h2">Use This Site As One Learning System</Heading>
+            <Heading as="h2">A Study System You Can Remember Under Pressure</Heading>
             <p>
-              The main path is now simple: follow the roadmap, read the foundation guide for the current phase,
-              complete a lab or drill, then explain the topic in the practice workspace. Nebius, MLOps, AIOps,
-              and the archive are useful supplements, but they should not compete with the core roadmap.
+              Most SRE resources become command dumps. This site turns each platform layer into a place you can walk
+              through mentally during interviews and incidents. Read the guide, walk the memory palace, run a drill,
+              then explain the system out loud until the reasoning is automatic.
             </p>
             <div className="button-group">
               <Link className="button button--primary button--lg" to="/docs/learning-path">
-                Open Canonical Roadmap
+                Follow Canonical Roadmap
               </Link>
-              <Link className="button button--secondary button--lg" to="/today">
-                Open Study Sessions
+              <Link className="button button--secondary button--lg" to="/docs/module-template">
+                Learn The Module Pattern
               </Link>
             </div>
           </div>
+
+          <section className="margin-top--xl">
+            <Heading as="h2">Memory Palaces</Heading>
+            <div className="row">
+              {memoryPalaces.map((item) => (
+                <div className="col col--4 margin-bottom--lg" key={item.title}>
+                  <div className="card padding--lg portal-card portal-card--prep">
+                    <Heading as="h3">{item.title}: {item.place}</Heading>
+                    <p>{item.description}</p>
+                    <Link to={item.to}>Study this palace</Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
 
           <section className="margin-top--xl">
             <Heading as="h2">Canonical Roadmap</Heading>
@@ -114,70 +134,16 @@ export default function Home(): ReactNode {
           </section>
 
           <section className="margin-top--xl">
-            <Heading as="h2">Primary Learning Areas</Heading>
+            <Heading as="h2">Daily Study Loop</Heading>
             <div className="row">
-              <div className="col col--4">
-                <div className="card padding--lg portal-card portal-card--prep">
-                  <Heading as="h3">Foundations</Heading>
-                  <p>
-                    The main course material. Start here for broad SRE depth, from beginner-friendly fundamentals
-                    to advanced production reasoning.
-                  </p>
-                  <Link to="/docs/foundations/linux-and-network-administration">Open foundations</Link>
-                </div>
-              </div>
-              <div className="col col--4">
-                <div className="card padding--lg portal-card portal-card--prep">
-                  <Heading as="h3">Practice</Heading>
-                  <p>
-                    Labs, drills, mock interviews, and written answers. Use this layer to convert reading into skill.
-                  </p>
-                  <Link to="/workspace">Open practice workspace</Link>
-                </div>
-              </div>
-              <div className="col col--4">
-                <div className="card padding--lg portal-card portal-card--prep">
-                  <Heading as="h3">Supplemental</Heading>
-                  <p>
-                    Nebius sprint, archive material, MLOps, and AIOps. Use these after the roadmap tells you what to study.
-                  </p>
-                  <Link to="/library">Open supplemental archive</Link>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="margin-top--xl">
-            <Heading as="h2">Study Loop</Heading>
-            <div className="row">
-              <div className="col col--3">
-                <div className="card padding--md">
-                  <Heading as="h3">1. Read</Heading>
-                  <p>Use the roadmap to choose exactly one foundation guide.</p>
-                </div>
-              </div>
-              <div className="col col--3">
-                <div className="card padding--md">
-                  <Heading as="h3">2. Trace</Heading>
-                  <p>Follow the process, packet, pod, alert, deployment, or state change end to end.</p>
-                </div>
-              </div>
-              <div className="col col--3">
-                <div className="card padding--md">
-                  <Heading as="h3">3. Practice</Heading>
-                  <p>Run commands, inspect output, break something safely, or complete a lab.</p>
-                </div>
-              </div>
-              <div className="col col--3">
-                <div className="card padding--md">
-                  <Heading as="h3">4. Explain</Heading>
-                  <p>Write or speak one answer in the workspace until it is clear and operational.</p>
-                </div>
-              </div>
+              <div className="col col--3"><div className="card padding--md"><Heading as="h3">1. Read</Heading><p>Choose one guide from the roadmap.</p></div></div>
+              <div className="col col--3"><div className="card padding--md"><Heading as="h3">2. Walk</Heading><p>Attach the topic to its memory palace.</p></div></div>
+              <div className="col col--3"><div className="card padding--md"><Heading as="h3">3. Drill</Heading><p>Run commands, inspect output, and break/fix safely.</p></div></div>
+              <div className="col col--3"><div className="card padding--md"><Heading as="h3">4. Explain</Heading><p>Answer like a senior operator under interview pressure.</p></div></div>
             </div>
             <AnswerCallout
-              challengeLabel="daily SRE study loop"
-              prompt="After each session, explain one topic from basics to advanced: mental model, commands, failure modes, and production tradeoffs."
+              challengeLabel="memory palace SRE answer"
+              prompt="Pick one palace and explain the technical layer from first principles: mental model, traffic or failure path, commands, likely incidents, and senior tradeoffs."
             />
           </section>
         </section>
