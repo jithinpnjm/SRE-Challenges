@@ -1,472 +1,521 @@
 # Kubernetes Networking Deep Dive
 
-> If you can explain the packet path, you can debug the packet path. Most Kubernetes networking issues are diagnosed by reasoning about which hop in the path is failing — not by guessing.
+> If you can explain the packet path, you can debug the packet path. Most Kubernetes networking issues are diagnosed by reasoning about which hop in the path is failing, not by guessing.
+
+Kubernetes networking becomes much easier when you imagine the cluster as a city.
 
 ---
 
-## What Is Kubernetes Networking?
+## What This Foundation Must Help You Do
 
-Kubernetes networking is a set of abstractions that give every Pod its own IP address and allow Pods to communicate regardless of which node they run on — as if they were all on the same flat network.
+By the end of this guide, you should be able to:
 
-**The core requirements (Kubernetes networking model):**
-1. Every Pod gets its own IP address
-2. Pods on any node can communicate with any other Pod without NAT
-3. Agents on a node (kubelet, etc.) can communicate with all Pods on that node
-4. Pods see their own IP the same way the outside world sees it (no NAT for Pod IPs within the cluster)
-
-These are requirements on the CNI plugin. How they are implemented varies by CNI (Calico, Cilium, Flannel, etc.).
+- explain pod-to-pod, pod-to-service, ingress-to-service, and pod-to-external traffic
+- reason about CNI, kube-proxy, eBPF, CoreDNS, EndpointSlices, Services, and NetworkPolicy together
+- debug DNS, Service routing, ingress, and policy failures without random command hopping
+- connect Kubernetes networking back to Linux networking fundamentals
+- explain the packet path clearly in senior/staff interviews
 
 ---
 
-## Mental Model
+## Memory Palace: Kubernetes Is A City Operations Center
 
-For any networking question, ask five questions in order:
-1. What type of traffic? (Pod→Pod, Pod→Service, External→Service, Pod→External)
-2. Where does name resolution happen? (CoreDNS, external DNS, `/etc/hosts`)
-3. Where is endpoint selection decided? (eBPF map, iptables rule, load balancer)
-4. Where is policy enforced? (NetworkPolicy, iptables, eBPF, security group)
-5. Where is state tracked? (conntrack, eBPF map, route table)
+Think of a Kubernetes cluster as a city.
+
+| Kubernetes concept | City analogy | Production meaning |
+|---|---|---|
+| Cluster | City | Whole platform boundary |
+| Node | Building | Worker host |
+| Pod | Apartment | Smallest scheduled workload unit |
+| Container | Person/process inside apartment | Isolated workload process |
+| Pod IP | Apartment address | Direct workload address |
+| Service | Public city phone number | Stable virtual access to changing pods |
+| EndpointSlice | Phone-book list of real apartments | Ready backend registry |
+| Ingress | City gate / reception entrance | External HTTP entry path |
+| CoreDNS | City directory desk | Service name resolution |
+| CNI | Road network | Pod connectivity implementation |
+| kube-proxy / eBPF | Traffic dispatcher | Service-to-backend translation |
+| NetworkPolicy | Neighborhood access rules | Pod traffic authorization |
+| kubelet | Building manager | Keeps pods healthy on a node |
+| Readiness probe | Open-for-visitors sign | Eligible to receive traffic |
+| Liveness probe | Welfare check | Restart if stuck |
+
+### Story: A Visitor Cannot Reach An Apartment
+
+A visitor calls the city number for the API.
+
+A junior operator says: “Kubernetes networking is broken.”
+
+A senior operator asks:
+
+1. Did the visitor find the city directory entry? DNS/CoreDNS.
+2. Did the city number map to real apartments? Service and EndpointSlice.
+3. Are the apartments open for visitors? Readiness.
+4. Are the roads working? CNI / route / eBPF / iptables.
+5. Is a neighborhood rule blocking entry? NetworkPolicy.
+6. Is the city gate misrouting traffic? Ingress / load balancer.
+
+Technical translation:
+
+- A pod can be Running but not Ready.
+- A Service can exist but have no endpoints.
+- DNS can work while Service routing fails.
+- Service routing can work while NetworkPolicy blocks traffic.
+- Ingress can be healthy while backends are unavailable.
 
 ---
 
-## Part 1: Pod Networking — How It Actually Works
+## Senior Mental Model
 
-### The veth Pair
+For any Kubernetes networking problem, ask five questions in order:
 
-Every Pod is connected to the node network via a **virtual Ethernet (veth) pair** — two virtual network interfaces connected like a cable:
-- One end (`eth0`) lives inside the Pod's network namespace
-- The other end (`vethXXXXXX`) lives in the node's root network namespace
+1. What type of traffic is failing?
+   - Pod to Pod
+   - Pod to Service
+   - External to Ingress to Service
+   - Pod to external dependency
+2. Where does name resolution happen?
+   - CoreDNS, external DNS, host resolver, `/etc/hosts`
+3. Where is endpoint selection decided?
+   - kube-proxy iptables/IPVS, Cilium eBPF map, cloud load balancer, ingress controller
+4. Where is policy enforced?
+   - NetworkPolicy, CNI, security groups, service mesh, proxy policy
+5. Where is state tracked?
+   - conntrack, eBPF maps, route tables, proxy connection pools
 
-```
-Pod network namespace          Node (root) network namespace
-┌─────────────────────┐        ┌──────────────────────────────┐
-│  eth0 (10.1.2.3)    │◄──────►│  veth3a4b5c                  │
-│  ip route:          │        │  (peer of Pod's eth0)        │
-│  default via        │        │                              │
-│  169.254.1.1        │        │  cilium_host / cbr0 / cni0   │
-└─────────────────────┘        │  (bridge or eBPF hook)       │
-                                └──────────────────────────────┘
-```
+A staff-level answer names the traffic type, the decision points, and the first failing hop.
 
-**How a packet leaves a Pod:**
-1. App sends packet to `10.1.2.5` (another Pod)
-2. Packet exits via `eth0` into the veth pair
-3. Packet appears on `vethXXXXXX` in the node network namespace
-4. Node routes packet — either locally or out via the physical NIC toward the destination node
+---
 
-### Pod-to-Pod: Same Node
+## Kubernetes Networking Requirements
 
-```
-Pod A (10.1.2.3)                Pod B (10.1.2.5)
-   eth0                            eth0
-    │ veth pair                     │ veth pair
-    │                               │
-    └──────── node bridge / eBPF ───┘
-              (stays on same node, no physical NIC)
-```
+Kubernetes expects:
 
-**How it works:**
-- With a bridge CNI (Flannel, classic Calico): both veth ends connect to a Linux bridge (`cbr0` or `cni0`). Packet is bridged locally.
-- With Cilium: eBPF program on the veth intercepts the packet and redirects to the destination veth directly. Faster — no bridge traversal.
+1. Every Pod gets its own IP address.
+2. Pods on any node can communicate with pods on any other node without NAT.
+3. Node agents such as kubelet can communicate with pods on that node.
+4. Pods see their own IP consistently.
 
-**Failure modes:**
-- CNI plugin failed to set up veth pair properly
-- eBPF maps out of sync (Cilium endpoint not present for new Pod)
-- `ip route` on node has no route for Pod subnet
+The CNI plugin implements this. Calico, Cilium, Flannel, and cloud-native CNIs differ in how they build the roads.
 
-### Pod-to-Pod: Cross-Node
+---
 
-```
-Node 1                           Node 2
-Pod A (10.1.2.3)                 Pod B (10.1.3.5)
-  eth0                              eth0
-    │                                 │
-  veth                              veth
-    │                                 │
-  Node 1 eth0 ───── fabric ─────── Node 2 eth0
-  (overlay or native routing)
-```
+## Fast Triage Flow
 
-**Two approaches:**
+## 1. Classify The Traffic
 
-**Overlay (VXLAN/Geneve):**
-- Pod packet is encapsulated in a UDP packet with source/dest node IPs
-- Node 1's CNI encapsulates, sends to Node 2
-- Node 2's CNI decapsulates, delivers to Pod B
-- Overhead: 50–100 bytes per packet, slight CPU cost for encap/decap
-- Works in any network where nodes can reach each other (VLANs, clouds)
+| Failure | First places to check |
+|---|---|
+| Pod cannot resolve service | CoreDNS, resolv.conf, NetworkPolicy to DNS |
+| Pod cannot reach Service | Service, EndpointSlice, kube-proxy/eBPF, policy |
+| External traffic fails | DNS, LB, Ingress, Service, endpoints |
+| One node fails | CNI agent, routes, node firewall, kubelet, conntrack |
+| Only some pods fail | labels, readiness, endpoint selection, policy |
+| New connections fail | conntrack, backlog, NAT, proxy pool, eBPF state |
 
-**Native routing:**
-- Pod CIDR routes are added to the node's routing table (and to the network fabric)
-- Packets route directly using Pod IPs — no encapsulation overhead
-- Requires network fabric to know Pod routes (GKE, EKS use this with VPC-native routing)
-- Cilium in native routing mode: no overhead, higher throughput
+## 2. Inspect The City Directory
 
 ```bash
-# Check routes on a Kubernetes node
-ip route show
-# Example Cilium native routing output:
-# 10.1.2.0/24 via 192.168.1.10 dev eth0  ← route to another node's Pod subnet
-# 10.1.3.0/24 via 192.168.1.11 dev eth0
-# local 10.1.1.0/24 dev cilium_host       ← this node's Pod subnet
+kubectl get svc
+kubectl get endpointslice
+kubectl get pods -o wide
+kubectl exec -it <pod> -- cat /etc/resolv.conf
+kubectl exec -it <pod> -- nslookup kubernetes.default
 ```
 
----
+What this tells you:
 
-## Part 2: Services — The Virtual IP Layer
+- whether DNS points at CoreDNS
+- whether Services exist
+- whether ready endpoints exist
+- whether pod IPs and nodes line up with expectations
 
-### What Is a Service?
-
-A Service is a stable virtual IP (ClusterIP) that load balances to a set of Pod backends. No packet is ever delivered to the ClusterIP itself — it is always translated to a backend Pod IP.
-
-**Why Services exist:**
-- Pod IPs are ephemeral (change on every restart)
-- Services provide a stable DNS name and IP
-- Services provide load balancing across multiple Pod replicas
-
-### Service Types
-
-| Type | How It Works | When to Use |
-|------|-------------|-------------|
-| `ClusterIP` | VIP accessible only within cluster | Internal service-to-service |
-| `NodePort` | Exposes port on every node | Dev/test, or when no cloud LB available |
-| `LoadBalancer` | Creates cloud load balancer | Production external access |
-| `ExternalName` | DNS CNAME to external name | Migrate or alias external services |
-| `Headless` | No VIP, returns Pod IPs directly | Stateful sets, direct Pod access, gRPC |
-
-### How Service Routing Works (iptables)
-
-When `kube-proxy` is used (traditional):
-```
-# For service 10.96.100.100:8080 with 3 backends:
-iptables-save | grep 10.96.100.100
-# OUTPUT: -j KUBE-SVC-XXXXX (jump to service chain)
-# KUBE-SVC: probabilistic rules (33% each backend)
-#   -m statistic --mode random --probability 0.33333 -j KUBE-SEP-1
-#   -m statistic --mode random --probability 0.5     -j KUBE-SEP-2
-#   -j KUBE-SEP-3
-# KUBE-SEP-1: -j DNAT --to-destination 10.1.2.3:8080
-```
-
-**Problem:** With 10,000 services, iptables chains are traversed linearly. O(n) lookup. This is why Cilium replaces iptables with eBPF hash maps (O(1) lookup).
-
-### How Service Routing Works (Cilium eBPF)
-
-```
-App sends packet to ClusterIP 10.96.100.100:8080
-    │
-    ▼
-Cilium eBPF program at TC hook on veth
-    │ lookup in BPF_MAP_TYPE_HASH: key=VIP, value=backend_list
-    │ select backend (round-robin or maglev hashing)
-    ▼
-DNAT: destination rewritten to 10.1.2.3:8080 (backend Pod IP)
-    │
-    ▼
-Packet routed to backend Pod normally
-```
+## 3. Inspect Traffic Dispatch
 
 ```bash
-# Inspect Cilium service maps
+kubectl describe svc <service>
+kubectl get endpointslice -l kubernetes.io/service-name=<service> -o yaml
+kubectl get pods -l app=<app> -o wide
+```
+
+If using Cilium:
+
+```bash
 cilium service list
-# Shows all services and their backend endpoints
-
-cilium map get cilium_lb4_services  # IPv4 service map
-cilium map get cilium_lb4_backends  # Backend IP/port entries
-
-# Verify endpoint is in the map
-cilium endpoint list | grep <pod-ip>
+cilium endpoint list
+hubble observe --follow
 ```
 
-### EndpointSlices — The Backend Registry
-
-EndpointSlices track which Pod IPs are ready to receive traffic for each Service.
+If using kube-proxy/iptables:
 
 ```bash
-# Check EndpointSlice for a service
-kubectl get endpointslice -l kubernetes.io/service-name=my-service -o yaml
-
-# Key fields:
-# .endpoints[].addresses  → Pod IPs
-# .endpoints[].conditions.ready  → must be true for traffic
-# .endpoints[].targetRef  → which Pod this address belongs to
+iptables-save | grep KUBE-SVC
 ```
 
-**Critical insight:** A pod can be `Running` but not in EndpointSlice if:
-- Its readiness probe is failing
-- The pod is being terminated (graceful shutdown period)
-- The EndpointSlice controller hasn't caught up yet (brief lag after pod starts)
-
----
-
-## Part 3: DNS in Kubernetes
-
-### CoreDNS Architecture
-
-Every Kubernetes cluster runs CoreDNS as the in-cluster DNS server:
-```
-Pod's /etc/resolv.conf:
-  nameserver 10.96.0.10     ← CoreDNS ClusterIP
-  search default.svc.cluster.local svc.cluster.local cluster.local
-  options ndots:5
-```
-
-**DNS lookup flow for `my-service.default.svc.cluster.local`:**
-1. Pod queries CoreDNS at `10.96.0.10`
-2. CoreDNS looks up the Service in its in-cluster store
-3. Returns the Service ClusterIP
-4. Pod sends traffic to ClusterIP
-5. Cilium/kube-proxy translates to backend Pod IP
-
-### The ndots:5 Problem
-
-`ndots:5` means: if a hostname has fewer than 5 dots, try appending search domains first.
-
-```
-Query for "api.example.com":
-  1. try api.example.com.default.svc.cluster.local  ← extra DNS lookup
-  2. try api.example.com.svc.cluster.local           ← extra DNS lookup
-  3. try api.example.com.cluster.local               ← extra DNS lookup
-  4. try api.example.com.                            ← succeeds (FQDN)
-```
-
-**Impact:** Every external DNS lookup makes 3–4 extra queries first. Under high request rate, this amplifies CoreDNS load significantly.
-
-**Fix:**
-```yaml
-# In Pod spec — use FQDN to avoid search domain traversal
-dnsConfig:
-  options:
-  - name: ndots
-    value: "1"    # only try search domains if hostname has <1 dot
-
-# Or always use FQDN with trailing dot
-# curl http://api.example.com./endpoint
-```
-
-### Debugging DNS
+## 4. Inspect Policy And Drops
 
 ```bash
-# Check CoreDNS pods are healthy
-kubectl get pods -n kube-system -l k8s-app=kube-dns
-
-# Check CoreDNS logs
-kubectl logs -n kube-system deploy/coredns
-
-# Test DNS from inside a Pod
-kubectl exec -it debug-pod -- nslookup kubernetes.default
-kubectl exec -it debug-pod -- nslookup my-service.default.svc.cluster.local
-kubectl exec -it debug-pod -- cat /etc/resolv.conf
-
-# Check DNS response time
-kubectl exec -it debug-pod -- time nslookup my-service
-
-# Check CoreDNS ConfigMap
-kubectl get configmap -n kube-system coredns -o yaml
+kubectl get networkpolicy -A
+kubectl describe networkpolicy -n <namespace>
 ```
 
-**Common CoreDNS failure modes:**
-- CoreDNS pods OOMKilled: under high query load, increase memory limit
-- DNS timeouts for external queries: check CoreDNS upstream resolvers
-- Only some namespaces affected: check network policy — CoreDNS needs to receive queries from all namespaces
-- SERVFAIL on external names: CoreDNS upstream (8.8.8.8 or your VPC resolver) is unreachable
-
----
-
-## Part 4: NetworkPolicy — How Traffic Is Controlled
-
-### What NetworkPolicy Does
-
-By default, all Pod-to-Pod communication is allowed. A NetworkPolicy restricts this.
-
-**Key rule:** When ANY NetworkPolicy targets a Pod, it becomes default-deny for the traffic types (Ingress/Egress) mentioned in that policy. Everything not explicitly allowed is dropped.
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: api-server-ingress
-  namespace: production
-spec:
-  podSelector:
-    matchLabels:
-      app: api-server    # this policy applies to pods with this label
-  policyTypes:
-  - Ingress              # controls inbound traffic
-  - Egress               # controls outbound traffic
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          role: frontend  # only pods with this label can send traffic
-    - namespaceSelector:
-        matchLabels:
-          team: monitoring  # all pods in monitoring namespace
-    ports:
-    - port: 8080
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: database
-    ports:
-    - port: 5432
-  - ports:               # allow DNS (critical — always include this)
-    - port: 53
-      protocol: UDP
-    - port: 53
-      protocol: TCP
-```
-
-### What Gets Silently Blocked
-
-When you first apply NetworkPolicy, these often break:
-
-| Traffic | Why It Breaks | Fix |
-|---------|--------------|-----|
-| DNS resolution | CoreDNS is on port 53, UDP | Add explicit egress rule for port 53 |
-| Prometheus scraping | Prometheus Pod doesn't match ingress selector | Add Prometheus label to ingress allow |
-| Health check from kubelet | kubelet uses node IP, not Pod identity | Add `namespaceSelector: {}` or node CIDR to ingress |
-| Webhook calls | API server calls admission webhooks | Allow ingress from API server CIDR |
-| External HTTPS | Blocked by default egress deny | Add egress rule for port 443 |
-
-### Debugging NetworkPolicy with Hubble (Cilium)
+With Cilium/Hubble:
 
 ```bash
-# Real-time flow monitoring — see what is being dropped
 hubble observe --type drop --follow
-
-# Filter by specific pod
-hubble observe --from-pod production/api-server --follow
-
-# Filter by destination
-hubble observe --to-pod production/database
-
-# See L7 HTTP flows
-hubble observe --protocol http --follow
-
-# Count drops by source/destination pair
-hubble observe --type drop --output json | \
-  jq '.source.pod_name + " → " + .destination.pod_name' | sort | uniq -c | sort -rn
+hubble observe --from-pod <namespace>/<pod> --follow
 ```
+
+## 5. Inspect Node-Level Networking
+
+```bash
+ip addr
+ip route
+ip neigh
+ss -s
+conntrack -S
+```
+
+Kubernetes networking still runs on Linux.
 
 ---
 
-## Part 5: Ingress and External Access
+## Pod Networking: Apartments And Roads
 
-### How Ingress Works
+Every pod gets a network namespace and usually a veth pair.
 
+```text
+Pod namespace                    Node namespace
++-------------------+            +----------------------+
+| eth0: Pod IP      | <------->  | veth peer            |
+| default route     |            | bridge/eBPF/CNI path |
++-------------------+            +----------------------+
 ```
-Internet → Cloud LB → Ingress Controller Pod → Service → Pod
+
+Same-node pod traffic may stay inside the node. Cross-node traffic must traverse the node network using overlay or native routing.
+
+## Same-Node Pod To Pod
+
+The packet often moves:
+
+1. Pod A process sends packet.
+2. Packet leaves Pod A eth0.
+3. CNI/bridge/eBPF path dispatches it locally.
+4. Packet enters Pod B eth0.
+
+Common failures:
+
+- pod interface not created
+- CNI agent broken
+- eBPF endpoint state stale
+- NetworkPolicy drop
+
+## Cross-Node Pod To Pod
+
+Two common road-building models:
+
+| Model | City analogy | Meaning |
+|---|---|---|
+| Overlay VXLAN/Geneve | Delivery truck uses tunnel road | Pod packet encapsulated between nodes |
+| Native routing | City roads know every apartment district | Fabric routes pod CIDRs directly |
+
+Overlay works broadly but adds overhead. Native routing is efficient but requires the underlying network to understand pod routes.
+
+---
+
+## Services: Public Phone Numbers For Moving Apartments
+
+A Service gives a stable virtual IP/name for pods that come and go.
+
+Important rule:
+
+> Traffic is not delivered to the ClusterIP as a real endpoint. It is translated to a ready backend pod.
+
+## Service Types
+
+| Type | City analogy | Use |
+|---|---|---|
+| ClusterIP | Internal city phone number | Internal service-to-service |
+| NodePort | Every building exposes a desk number | Basic external access / dev |
+| LoadBalancer | Public city switchboard | Cloud production entry |
+| ExternalName | Directory alias | External service alias |
+| Headless | Direct apartment list | Stateful workloads / direct discovery |
+
+## EndpointSlices: The Real Apartment List
+
+EndpointSlices answer:
+
+> Which pods are actually ready to receive traffic?
+
+```bash
+kubectl get endpointslice -l kubernetes.io/service-name=<service> -o yaml
 ```
 
-**Ingress Controller** (nginx, Traefik, or cloud-native) is a Pod that:
-- Watches Ingress objects
-- Configures reverse proxy rules
-- Receives traffic from the cloud load balancer
-- Forwards to Service backends based on host/path rules
+A pod can be Running but missing from EndpointSlice if:
+
+- readiness probe fails
+- pod is terminating
+- labels do not match Service selector
+- endpoint controller has not caught up
+
+This is one of the most important Kubernetes networking debugging facts.
+
+---
+
+## DNS: The City Directory Desk
+
+CoreDNS maps service names to ClusterIPs.
+
+Example flow:
+
+1. Pod asks CoreDNS for `api.default.svc.cluster.local`.
+2. CoreDNS returns Service ClusterIP.
+3. Pod sends traffic to ClusterIP.
+4. kube-proxy/eBPF translates to backend pod IP.
+
+```bash
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+kubectl logs -n kube-system deploy/coredns
+kubectl exec -it <pod> -- nslookup kubernetes.default
+kubectl exec -it <pod> -- cat /etc/resolv.conf
+```
+
+## The `ndots:5` Trap
+
+Kubernetes pods often use `ndots:5`. Short external names may trigger multiple internal search-domain attempts before the final query.
+
+Symptoms:
+
+- external calls look slow
+- CoreDNS query volume is high
+- DNS latency affects app p95/p99
+
+Mitigations:
+
+- use fully qualified names with a trailing dot when appropriate
+- tune `dnsConfig` for external-heavy workloads
+- cache DNS responsibly
+
+---
+
+## NetworkPolicy: Neighborhood Access Rules
+
+By default, pod-to-pod communication is usually open. Once a NetworkPolicy selects a pod for ingress or egress, that direction becomes restricted to allowed rules.
+
+Common mistake:
+
+> Adding egress default-deny and forgetting DNS.
+
+Always consider allowing DNS when needed:
 
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: api-ingress
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-spec:
-  rules:
-  - host: api.example.com
-    http:
-      paths:
-      - path: /v1
-        pathType: Prefix
-        backend:
-          service:
-            name: api-service
-            port:
-              number: 8080
+egress:
+- ports:
+  - port: 53
+    protocol: UDP
+  - port: 53
+    protocol: TCP
 ```
 
-**Why "service is down" when the Ingress controller is healthy:**
-- Ingress controller reaches the Service, but Service has no ready backends
-- Health check on the Service backend is passing but is too shallow (checks `/healthz` not real path)
-- TLS certificate expired on the Ingress controller
-- Ingress controller config not updated (watch event dropped, controller restarted)
+Common blocked traffic:
+
+- DNS to CoreDNS
+- Prometheus scraping
+- ingress controller to backend pods
+- API server to admission webhooks
+- app to external HTTPS dependencies
 
 ---
 
-## Part 6: Common Failure Patterns and Debugging
+## Ingress: The City Gate
 
-### Decision Tree: Pod Cannot Reach Service
+External HTTP traffic commonly flows like this:
 
-```
-Step 1: Can Pod reach the Service ClusterIP directly?
-    kubectl exec -it <pod> -- curl http://<ClusterIP>:<port>
-
-    If NO:
-      Step 2: Does the Service have ready endpoints?
-        kubectl get endpointslice -l kubernetes.io/service-name=<svc>
-        → If no endpoints: readiness probe failing, check pod logs/events
-        → If endpoints exist: check kube-proxy/Cilium health
-
-      Step 3: Is there a NetworkPolicy blocking?
-        kubectl get networkpolicy -n <ns>
-        hubble observe --from-pod <pod> --type drop  (Cilium)
+```text
+Internet -> Cloud Load Balancer -> Ingress Controller -> Service -> Ready Pod
 ```
 
-### Decision Tree: Pod Cannot Resolve DNS
+If ingress fails, inspect each checkpoint:
 
-```
-Step 1: Is /etc/resolv.conf correct?
-    kubectl exec -it <pod> -- cat /etc/resolv.conf
-    → Should show CoreDNS ClusterIP as nameserver
-
-Step 2: Is CoreDNS healthy?
-    kubectl get pods -n kube-system | grep coredns
-    kubectl logs -n kube-system deploy/coredns
-
-Step 3: Can the Pod reach CoreDNS?
-    kubectl exec -it <pod> -- nc -u -z <CoreDNS-IP> 53
-    → If blocked: NetworkPolicy blocking egress to CoreDNS
-
-Step 4: Test resolution
-    kubectl exec -it <pod> -- nslookup kubernetes.default
+```bash
+kubectl get ingress -A
+kubectl describe ingress <name>
+kubectl logs -n <ingress-namespace> deploy/<ingress-controller>
+kubectl get svc <service>
+kubectl get endpointslice -l kubernetes.io/service-name=<service>
 ```
 
-### Decision Tree: Intermittent Service Failures
+Common failures:
 
-```
-Possible causes:
-1. One Pod backend is unhealthy but readiness probe doesn't catch it
-   → Add deeper readiness probe (test actual dependency, not just /ping)
-
-2. Connection to a terminating Pod during rolling update
-   → Add preStop hook with sleep (give LB time to drain)
-   → Configure terminationGracePeriodSeconds > maxDrainSeconds
-
-3. TCP connection reuse hitting dead backends
-   → Configure client-side connection pool max lifetime
-   → Use HTTP/1.1 with Connection: close for services under frequent roll
-
-4. DNS TTL causing stale IPs
-   → Check service's ClusterIP TTL (should be 30s default in CoreDNS)
-```
+- DNS points to wrong load balancer
+- TLS certificate expired or wrong SNI
+- ingress rule host/path mismatch
+- Service has no ready endpoints
+- backend readiness too shallow
+- NetworkPolicy blocks ingress controller to pod
 
 ---
 
-## Points to Remember
+## Real Incident Stories
 
-- Every Pod gets a unique IP, reachable from any node without NAT
-- Service ClusterIPs are virtual — never delivered to, always translated (iptables DNAT or Cilium eBPF)
-- Ready endpoints = Pods where readiness probe passes + not terminating
-- `ndots:5` amplifies external DNS queries — consider lowering to 1 for external-heavy workloads
-- NetworkPolicy default-deny applies per traffic type (Ingress/Egress) when ANY policy targets a pod
-- DNS port 53 must be explicitly allowed in NetworkPolicy egress rules — easy to forget
-- Cilium uses eBPF maps for O(1) Service lookup vs iptables O(n) — significant at scale
-- Overlay (VXLAN) has overhead — native routing is faster but requires fabric cooperation
+## Scenario 1: Service Exists But No Traffic Reaches Pods
 
-## What to Study Next
+Wrong assumption: kube-proxy is broken.
 
-- [11-cloud-networking-and-kubernetes-networking.md](./11-cloud-networking-and-kubernetes-networking.md) — cloud VPC + K8s networking combined
-- [nebius/02-kubernetes-cilium-production.md](../nebius/02-kubernetes-cilium-production.md) — Cilium deep dive (Nebius-specific)
-- [01-networking-fundamentals.md](./01-networking-fundamentals.md) — TCP/IP foundations that K8s networking builds on
+Better path:
+
+```bash
+kubectl describe svc api
+kubectl get endpointslice -l kubernetes.io/service-name=api
+kubectl get pods -l app=api
+kubectl describe pod <api-pod>
+```
+
+Likely causes:
+
+- Service selector does not match pod labels
+- readiness probe failing
+- pods terminating
+
+## Scenario 2: DNS Works In One Namespace But Not Another
+
+Wrong assumption: CoreDNS is down.
+
+Better path:
+
+```bash
+kubectl exec -n good-ns <pod> -- nslookup kubernetes.default
+kubectl exec -n bad-ns <pod> -- nslookup kubernetes.default
+kubectl get networkpolicy -n bad-ns
+```
+
+Likely cause:
+
+- NetworkPolicy blocks egress to CoreDNS.
+
+## Scenario 3: Only One Node Has Pod Connectivity Failures
+
+Wrong assumption: application regression.
+
+Better path:
+
+```bash
+kubectl get pods -o wide
+kubectl describe node <node>
+kubectl logs -n kube-system <cni-pod-on-node>
+ip route
+conntrack -S
+```
+
+Likely causes:
+
+- CNI agent unhealthy on one node
+- stale route/eBPF state
+- conntrack pressure
+- node-level firewall/routing issue
+
+## Scenario 4: Ingress Returns 502
+
+Wrong assumption: ingress controller is broken.
+
+Better path:
+
+```bash
+kubectl describe ingress <ingress>
+kubectl get svc <service>
+kubectl get endpointslice -l kubernetes.io/service-name=<service>
+kubectl logs -n <ingress-namespace> deploy/<controller>
+```
+
+Likely causes:
+
+- no ready endpoints
+- upstream connect failure
+- wrong service port
+- NetworkPolicy blocking controller to backend
+
+---
+
+## Command Interpretation Table
+
+| Command | What it answers | Bad signs | Next step |
+|---|---|---|---|
+| `kubectl get pods -o wide` | Where are pods and IPs? | affected pods on one node | inspect node/CNI |
+| `kubectl get svc` | Does stable service exist? | wrong port/type | describe Service |
+| `kubectl get endpointslice` | Are ready backends registered? | empty endpoints | inspect selectors/readiness |
+| `kubectl exec -- nslookup` | Does pod DNS work? | timeout/SERVFAIL | inspect CoreDNS/policy |
+| `kubectl get networkpolicy -A` | Is policy active? | default-deny without DNS | inspect allow rules |
+| `hubble observe --type drop` | What is being dropped? | policy/drop reasons | fix policy/path |
+| `cilium service list` | eBPF service map state | missing backend | inspect endpoints/Cilium |
+| `iptables-save | grep KUBE-SVC` | kube-proxy service rules | missing service chain | inspect kube-proxy |
+| `conntrack -S` | State tracking health | drops/insert_failed | tune/reduce churn |
+
+---
+
+## Kubernetes To Linux Connection
+
+Kubernetes networking is Linux networking with controllers around it.
+
+- Pod interfaces are Linux interfaces.
+- Service translation uses iptables/IPVS/eBPF.
+- DNS is still DNS.
+- NetworkPolicy becomes dataplane rules.
+- Node problems become pod problems.
+- conntrack exhaustion can break new pod connections.
+
+If you cannot debug Linux routing, sockets, DNS, and policy, Kubernetes networking will feel random.
+
+---
+
+## Hands-On Drill
+
+Create a simple debug path:
+
+1. Deploy a client pod and an API pod.
+2. Create a ClusterIP Service for the API.
+3. Exec into the client pod.
+4. Test DNS, Service, and direct pod IP.
+
+Commands:
+
+```bash
+kubectl get pods -o wide
+kubectl get svc
+kubectl get endpointslice
+kubectl exec -it <client-pod> -- nslookup <service>
+kubectl exec -it <client-pod> -- curl -v http://<service>:<port>
+kubectl exec -it <client-pod> -- curl -v http://<pod-ip>:<port>
+```
+
+Interpretation:
+
+- DNS fails: inspect CoreDNS/resolv.conf/policy.
+- Service fails but pod IP works: inspect Service/EndpointSlice/kube-proxy/eBPF.
+- Both fail: inspect app listener, policy, CNI, or node path.
+
+---
+
+## Interview Answer Shape
+
+If asked, “How would you debug a pod that cannot reach a Kubernetes Service?” a strong answer is:
+
+> I would first classify whether this is DNS, Service translation, backend readiness, policy, or node networking. I would test DNS from inside the pod, then inspect the Service and EndpointSlice to confirm ready backends. If endpoints exist, I would compare direct pod IP access with ClusterIP access to separate backend health from Service translation. Then I would check NetworkPolicy and CNI dataplane signals such as Hubble, Cilium maps, kube-proxy rules, or conntrack depending on the cluster implementation.
+
+---
+
+## Recall Prompts
+
+- In the city model, what is a Service?
+- Why can a Running pod be absent from EndpointSlice?
+- What does CoreDNS return for a normal ClusterIP Service?
+- What breaks when NetworkPolicy blocks egress to port 53?
+- How do you distinguish DNS failure from Service routing failure?
+- Why can one bad node cause only some pods to fail?
+
+---
+
+## What To Study Next
+
+- [Cloud networking and Kubernetes networking](./11-cloud-networking-and-kubernetes-networking.md)
+- [Networking fundamentals](./01-networking-fundamentals.md)
+- [Linux and Kubernetes foundations](./02-linux-kubernetes-foundations.md)
