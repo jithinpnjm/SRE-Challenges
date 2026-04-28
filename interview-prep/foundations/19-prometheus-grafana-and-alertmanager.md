@@ -1,548 +1,364 @@
-# Foundations: Prometheus, Grafana, And Alertmanager Zero To Hero
+# Foundations: Prometheus, Grafana, And Alertmanager Premium Teaching Guide
 
-Prometheus, Grafana, and Alertmanager are the practical toolchain behind many Kubernetes and SRE observability systems.
+Prometheus, Grafana, and Alertmanager form one of the most common observability stacks used by SRE and platform teams.
 
-Prometheus collects and evaluates metrics. Grafana visualizes them. Alertmanager routes alerts to humans and systems.
+Prometheus collects metrics and evaluates rules. Grafana visualizes data. Alertmanager routes alerts to humans and systems.
 
-This guide is designed as a complete path:
-
-- Beginner: what each tool does and how metrics work
-- Intermediate: PromQL, dashboards, alert rules, exporters
-- Advanced: recording rules, cardinality, Alertmanager routing, Thanos, scaling
-- SRE Level: debug missing metrics, noisy alerts, high-cardinality incidents, broken dashboards
-- Interview Level: explain how a production metrics stack should be designed and operated
+This guide teaches the stack from first principles to production-grade operations.
 
 ---
 
-# Part 1: The Mental Model
+# How To Use This Module
 
-```text
-Applications / nodes / exporters expose /metrics
-Prometheus scrapes targets on a schedule
-Prometheus stores time series locally
-Prometheus evaluates rules
-Alertmanager receives firing alerts and routes notifications
-Grafana queries Prometheus and renders dashboards
-```
+Study in layers:
 
-| Tool | Responsibility |
-|---|---|
-| Prometheus | scrape, store, query, evaluate alerts |
-| Grafana | visualize and explore data |
-| Alertmanager | group, deduplicate, silence, inhibit, route alerts |
-| Exporters | expose metrics for systems that do not speak Prometheus natively |
+1. **Beginner Layer** — metrics, scraping, dashboards, alerts.
+2. **Intermediate Layer** — PromQL, exporters, rules, routing.
+3. **Advanced Layer** — cardinality, recording rules, scaling, SLO alerts.
+4. **Production SRE Layer** — missing metrics, noisy alerts, bad dashboards.
+5. **Interview Layer** — explain a real metrics platform clearly.
 
 ---
 
-# Part 2: Prometheus Metrics Format
+# Memory Palace: Hospital Monitoring Ward
 
-Targets expose metrics over HTTP, usually at `/metrics`.
-
-```text
-# HELP http_requests_total Total HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",status="200"} 1234
-http_requests_total{method="GET",status="500"} 7
-```
-
-Metric = name + labels + value + timestamp.
-
-Labels create dimensions. Too many label combinations create cardinality problems.
-
----
-
-# Part 3: Metric Types
-
-| Type | Meaning | Query pattern |
+| Tool | Analogy | Meaning |
 |---|---|---|
-| Counter | only increases | `rate()` / `increase()` |
-| Gauge | current value | direct query |
-| Histogram | bucketed observations | `histogram_quantile()` |
-| Summary | client-side quantiles | avoid for aggregation |
+| Prometheus | Bedside monitor | Continuously reads signals |
+| Grafana | Nurse station screen | Visual overview |
+| Alertmanager | Paging desk | Sends alerts to responders |
+| Exporter | Sensor adapter | Converts system signals |
+| Rule | Escalation policy | Trigger condition |
+| Dashboard | Ward board | Shared situational awareness |
 
-Examples:
+---
+
+# Beginner Layer: Metrics Model
+
+A metric is usually:
+
+```text
+name + labels + value + time
+```
+
+Example:
+
+```text
+http_requests_total{service="api",status="500"}
+```
+
+Labels create dimensions for filtering and aggregation.
+
+---
+
+# Beginner Layer: Metric Types
+
+| Type | Meaning | Use |
+|---|---|---|
+| Counter | Only increases | requests, errors |
+| Gauge | Current value | memory, queue depth |
+| Histogram | Bucketed observations | latency |
+| Summary | Client-side quantiles | niche use |
+
+Important rule:
+
+Use `rate()` with counters.
+
+---
+
+# Beginner Layer: Pull Model
+
+Prometheus usually scrapes targets over HTTP.
+
+```text
+app /metrics <- Prometheus scrape every interval
+```
+
+Benefits:
+
+- central scheduling
+- target health visibility
+- easier service discovery
+
+---
+
+# Beginner Layer: First Useful Queries
 
 ```promql
+up
 rate(http_requests_total[5m])
 process_resident_memory_bytes
-histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+sum(rate(http_requests_total[5m])) by (service)
 ```
 
 ---
 
-# Part 4: PromQL Basics
+# Intermediate Layer: RED And USE Dashboards
 
-## Selectors
+## RED for services
 
-```promql
-http_requests_total{job="api"}
-http_requests_total{status=~"5.."}
-http_requests_total{status!~"2.."}
-```
+- Rate
+- Errors
+- Duration
 
-## Rate
+## USE for infrastructure
 
-```promql
-rate(http_requests_total[5m])
-increase(http_requests_total[1h])
-```
+- Utilization
+- Saturation
+- Errors
 
-Use `rate()` for alerts and dashboards. Use `irate()` only for very spiky instant dashboards.
-
-## Aggregation
-
-```promql
-sum(rate(http_requests_total[5m]))
-sum by (service) (rate(http_requests_total[5m]))
-avg by (instance) (node_load1)
-```
+Start dashboards with these before vanity metrics.
 
 ---
 
-# Part 5: Useful SRE PromQL
-
-## Error Rate
-
-```promql
-sum(rate(http_requests_total{status=~"5.."}[5m]))
-/
-sum(rate(http_requests_total[5m]))
-```
-
-## P99 Latency
-
-```promql
-histogram_quantile(0.99,
-  sum by (le, service) (
-    rate(http_request_duration_seconds_bucket[5m])
-  )
-)
-```
-
-## CPU Usage
-
-```promql
-100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
-```
-
-## Memory Usage
-
-```promql
-100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
-```
-
-## Pod Restarts
-
-```promql
-increase(kube_pod_container_status_restarts_total[15m])
-```
-
----
-
-# Part 6: Histograms And Percentiles
-
-Histograms estimate percentiles from buckets.
-
-Important:
-
-- buckets must match expected latency range
-- aggregate with `sum by (le, ...)` before `histogram_quantile`
-- do not average percentiles
-
-Bad:
-
-```promql
-avg(http_request_duration_seconds{quantile="0.99"})
-```
-
-Better:
-
-```promql
-histogram_quantile(0.99,
-  sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
-)
-```
-
----
-
-# Part 7: Scraping And Service Discovery
-
-Static scrape:
-
-```yaml
-scrape_configs:
-  - job_name: node
-    static_configs:
-      - targets: ["node1:9100", "node2:9100"]
-```
-
-Kubernetes discovery commonly scrapes:
-
-- pods
-- services
-- endpoints
-- nodes
-- kube-state-metrics
-- node-exporter
-
-If a target is down, query:
-
-```promql
-up == 0
-```
-
-Then check Prometheus Targets UI.
-
----
-
-# Part 8: Exporters
+# Intermediate Layer: Exporters
 
 Common exporters:
 
-| Exporter | Purpose |
-|---|---|
-| node_exporter | Linux host metrics |
-| kube-state-metrics | Kubernetes object state |
-| blackbox_exporter | HTTP/TCP/DNS probes |
-| postgres_exporter | PostgreSQL metrics |
-| redis_exporter | Redis metrics |
-| nginx exporter | NGINX metrics |
-| DCGM exporter | NVIDIA GPU metrics |
+- node_exporter
+- kube-state-metrics
+- blackbox_exporter
+- postgres_exporter
+- redis_exporter
+- nginx exporter
 
-Exporter rule:
-
-> Exporters expose system facts. Alerts must still map to user impact or clear operational action.
+Exporters expose system facts. They do not replace thinking.
 
 ---
 
-# Part 9: Recording Rules
+# Intermediate Layer: Alert Rules
 
-Recording rules precompute expensive or repeated PromQL.
+Example pattern:
 
-```yaml
-groups:
-  - name: service-recording-rules
-    rules:
-      - record: service:http_requests:rate5m
-        expr: sum by (service) (rate(http_requests_total[5m]))
+```text
+High error rate for 5 minutes
 ```
-
-Use for:
-
-- repeated dashboard queries
-- SLO calculations
-- expensive histogram queries
-- long retention/global aggregation
-
----
-
-# Part 10: Alert Rules
-
-```yaml
-groups:
-  - name: service-alerts
-    rules:
-      - alert: HighErrorRate
-        expr: |
-          sum(rate(http_requests_total{status=~"5.."}[5m]))
-          /
-          sum(rate(http_requests_total[5m])) > 0.01
-        for: 5m
-        labels:
-          severity: page
-          team: platform
-        annotations:
-          summary: "High error rate"
-          runbook_url: "https://runbooks/high-error-rate"
-```
-
-`for:` prevents noisy alerts from short spikes.
 
 Good alerts include:
 
 - severity
 - owner/team
 - summary
-- runbook
-- impact description
+- runbook link
+- clear action
+
+Use `for:` to avoid noisy short spikes.
 
 ---
 
-# Part 11: SLO Burn Rate Alerts
-
-Burn rate connects alerts to error budgets.
-
-```promql
-(
-  1 - (
-    sum(rate(http_requests_total{status!~"5.."}[1h]))
-    /
-    sum(rate(http_requests_total[1h]))
-  )
-) / 0.001 > 14
-```
-
-For a 99.9% SLO, allowed error rate is `0.001`.
-
-Multi-window alerts reduce false positives.
-
----
-
-# Part 12: Alertmanager
-
-Alertmanager does not decide alert conditions. Prometheus does.
+# Intermediate Layer: Alertmanager
 
 Alertmanager handles:
 
 - grouping
 - deduplication
-- routing
 - silences
 - inhibition
+- routing
 - notification delivery
 
-Routing example:
-
-```yaml
-route:
-  group_by: ["alertname", "service"]
-  group_wait: 30s
-  group_interval: 5m
-  repeat_interval: 4h
-  receiver: slack-default
-  routes:
-    - matchers:
-        - severity="page"
-      receiver: pagerduty
-```
-
----
-
-# Part 13: Silences And Inhibition
-
-Silence planned maintenance:
-
-```bash
-amtool silence add alertname="NodeDown" node="node1" --duration=2h --comment="maintenance"
-```
-
-Inhibition example:
-
-> If `NodeDown` fires, suppress pod alerts from that node.
-
-This prevents alert storms.
-
----
-
-# Part 14: Grafana Dashboard Design
-
-A good dashboard answers one question quickly.
-
-Service dashboard layout:
-
-1. Rate, errors, duration
-2. saturation/resources
-3. dependencies
-4. recent deploy markers/log links
-
-Useful panels:
-
-- time series
-- stat
-- gauge
-- table
-- heatmap
-- logs panel
-- alert list
-
-Use variables:
+Example:
 
 ```text
-$service
-$namespace
-$cluster
-$env
+warning -> Slack
+critical -> PagerDuty
 ```
 
 ---
 
-# Part 15: Cardinality
+# Advanced Layer: Histograms And Percentiles
+
+Use histograms for p95/p99 latency.
+
+Important truth:
+
+Do not average percentiles.
+
+Use bucket aggregation first, then quantiles.
+
+Tail latency often matters more than averages.
+
+---
+
+# Advanced Layer: Cardinality
 
 Cardinality = number of unique time series.
 
-Bad label examples:
+Dangerous labels:
 
 - user_id
 - request_id
 - trace_id
 - full URL with IDs
-- pod UID where not needed
+- random GUIDs
 
-Diagnose:
+High cardinality causes:
 
-```promql
-topk(10, count by (__name__) ({__name__=~".+"}))
-count(http_requests_total)
-```
+- high memory use
+- slow queries
+- large storage growth
 
-High cardinality causes memory pressure, slow queries, and TSDB growth.
+Design labels intentionally.
 
 ---
 
-# Part 16: Scaling Prometheus
+# Advanced Layer: Recording Rules
 
-Single Prometheus is simple but limited.
+Use recording rules to precompute expensive queries.
 
-Scaling options:
+Good for:
 
-- vertical scaling
+- repeated dashboards
+- SLO math
+- expensive histograms
+- faster alerts
+
+---
+
+# Advanced Layer: Scaling Prometheus
+
+Paths:
+
+- bigger single instance
 - federation
-- functional sharding
+- sharding
 - Thanos
-- Cortex/Mimir
+- Mimir/Cortex style systems
 
-Thanos adds:
-
-- object storage retention
-- global query
-- deduplication
-- downsampling
+Use complexity only when needed.
 
 ---
 
-# Part 17: Troubleshooting By Symptom
+# Advanced Layer: SLO Burn Alerts
+
+Better than arbitrary CPU pages.
+
+Burn alerts page when reliability commitments are being consumed too quickly.
+
+This aligns paging with user impact.
+
+---
+
+# Production SRE Layer: Real Incidents
 
 ## Grafana Shows No Data
 
 Check:
 
-- PromQL directly in Prometheus
 - time range
-- label selectors
-- scrape target status
+- datasource
+- query labels
+- target scrape health
 
-## Target `up == 0`
+## Target Down (`up=0`)
 
 Check:
 
-- target reachable from Prometheus
+- app running
 - port/path correct
 - network policy/firewall
 - service discovery labels
 
 ## Prometheus Memory High
 
-Likely:
+Likely causes:
 
-- high cardinality
-- expensive queries
+- cardinality explosion
 - too many targets
+- expensive queries
+
+## Alert Never Paged
 
 Check:
 
-```promql
-prometheus_tsdb_head_series
-prometheus_engine_query_duration_seconds
-```
+- rule firing?
+- routed correctly?
+- silence active?
+- receiver healthy?
 
-## Alert Did Not Page
+## Dashboard Looked Fine But Users Slow
 
-Check:
+Cause often:
 
-- Prometheus rule state
-- Alertmanager received alert
-- routing labels
-- silence/inhibition
-- receiver config
+- averages only
+n- no p95/p99
+- no dependency panels
 
 ---
 
-# Part 18: Real Incident Stories
+# Production SRE Layer: Dashboard Design
 
-## User ID Label Took Down Prometheus
+Top row:
 
-Cause:
+1. request rate
+2. error rate
+3. p95/p99 latency
+4. saturation
 
-- application exported user_id label
-- millions of active series
+Second row:
 
-Fix:
+- resources
+- dependency latency
+- queue depth
+- deploy markers
 
-- remove unbounded label
-- relabel/drop at scrape temporarily
-- restart/scale Prometheus if needed
-
-## Alert Storm During Node Failure
-
-Cause:
-
-- no inhibition rules
-
-Fix:
-
-- node-level alert inhibits child pod alerts
-
-## Dashboard Hid Latency Problem
-
-Cause:
-
-- average latency panel only
-
-Fix:
-
-- p95/p99 histogram panels
-- dependency latency panels
+A dashboard should answer a question in under 10 seconds.
 
 ---
 
-# Part 19: Labs
+# Interview Layer: Strong Answers
+
+## Why Prometheus pull model?
+
+> Centralized scraping simplifies discovery, health visibility, and target control.
+
+## Counter vs Gauge?
+
+> Counter only increases and is used with rate functions. Gauge represents a current value.
+
+## Why is cardinality dangerous?
+
+> Too many unique label combinations increase memory, storage, and query cost.
+
+## How would you page reliably?
+
+> Use actionable alerts tied to user impact or SLO burn, with ownership and runbooks.
+
+---
+
+# Labs
 
 ## Beginner
 
-- run node_exporter
-- scrape with Prometheus
-- query `up`
-- create Grafana panel
+1. Scrape node_exporter.
+2. Query `up`.
+3. Build one CPU dashboard.
 
 ## Intermediate
 
-- write service error-rate query
-- create alert rule
-- route warning to Slack/mock receiver
-- build RED dashboard
+1. Build RED dashboard.
+2. Create error-rate alert.
+3. Route warnings and critical alerts differently.
 
 ## Advanced
 
-- create recording rules
-- simulate high cardinality
-- build SLO burn alert
-- configure Alertmanager inhibition
+1. Simulate cardinality problem.
+2. Add recording rules.
+3. Build burn-rate alerts.
+4. Configure inhibition.
 
 ---
 
-# Part 20: Interview Questions
+# Memory Review
 
-- Why Prometheus pull model?
-- Counter vs gauge?
-- Why use `rate()`?
-- How does `histogram_quantile` work?
-- What causes high cardinality?
-- What does Alertmanager do?
-- How do you design a useful dashboard?
-- How would you scale Prometheus?
+- Why use `rate()` with counters?
+- Why are user IDs bad labels?
+- Why do averages hide pain?
+- What is inhibition?
+- Why should dashboards begin with RED metrics?
 
 ---
 
-# Part 21: Senior Answer Shape
+# Senior Summary
 
-> I design Prometheus around actionable service and infrastructure signals. Services expose low-cardinality metrics with counters, gauges, and histograms. Prometheus scrapes and evaluates rules, Grafana visualizes RED/USE dashboards, and Alertmanager routes only actionable alerts with clear ownership and runbooks. I control cardinality, precompute expensive SLO queries with recording rules, and use burn-rate alerts for paging instead of arbitrary thresholds.
-
----
-
-# Recall Prompts
-
-- Why should counters use `rate()`?
-- Why is `user_id` a dangerous label?
-- What does `for:` do in an alert rule?
-- What is the difference between silence and inhibition?
-- Why should dashboards start with RED metrics?
+> I design metrics platforms around actionable low-cardinality signals. Services expose counters, gauges, and histograms. Prometheus scrapes and evaluates rules, Grafana visualizes RED and USE dashboards, and Alertmanager routes only actionable alerts with clear ownership. I control cardinality, precompute expensive queries, and align paging with SLO risk.
