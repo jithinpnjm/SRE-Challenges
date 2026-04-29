@@ -1,41 +1,56 @@
-# Foundations: Docker And Container Runtime Zero To Hero
+# Foundations: Docker And Container Runtime Premium Teaching Guide
 
-Containers are one of the most important abstractions in modern SRE work. Kubernetes, CI runners, service platforms, batch systems, and many ML workloads all depend on container fundamentals.
+Containers power modern platforms: Kubernetes, CI runners, batch jobs, developer environments, and many AI workloads.
 
-A container is not a small virtual machine. A container is usually a Linux process tree isolated with namespaces, limited with cgroups, and started from an image filesystem.
+A container is not a tiny VM. It is usually a Linux process tree isolated with namespaces, limited with cgroups, and started from an image filesystem.
 
-This guide is designed as a complete path:
-
-- Beginner: images, containers, Docker basics
-- Intermediate: Dockerfiles, volumes, networking, logs, registries
-- Advanced: namespaces, cgroups, overlay filesystems, PID 1, runtime internals
-- SRE Level: debugging image pulls, CrashLoopBackOff, OOMKilled, disk pressure, runtime failures
-- Interview Level: explain containers clearly from Linux internals to Kubernetes runtime behavior
+This guide teaches containers from first principles to production-grade runtime operations.
 
 ---
 
-# Part 1: What A Container Actually Is
+# How To Use This Module
 
-A container is a running process with isolation and limits.
+Study in layers:
 
-| Concept | Meaning |
-|---|---|
-| Image | Static packaged filesystem and metadata |
-| Container | Running process created from an image |
-| Namespace | What the process can see |
-| cgroup | What resources the process can use |
-| Runtime | Software that starts and manages containers |
-| Registry | Remote storage for images |
+1. **Beginner Layer** — images, containers, Docker basics.
+2. **Intermediate Layer** — Dockerfiles, networking, volumes, registries.
+3. **Advanced Layer** — namespaces, cgroups, overlayfs, PID 1, runtimes.
+4. **Production SRE Layer** — pull failures, OOM, disk pressure, crash loops.
+5. **Interview Layer** — explain containers from Linux internals upward.
 
-Mental model:
+---
+
+# Memory Palace: Apartment Building
+
+| Concept | Analogy | Meaning |
+|---|---|---|
+| Host | Building | Linux machine |
+| Image | Blueprint + furniture set | Packaged filesystem |
+| Container | Apartment in use | Running isolated process |
+| Namespace | Apartment walls | Visibility isolation |
+| cgroup | Utility meter | Resource limits |
+| Runtime | Building manager | Starts and supervises |
+| Registry | Warehouse | Image storage |
+| Volume | Storage locker | Persistent data |
+
+---
+
+# Beginner Layer: What A Container Really Is
 
 ```text
-Image layers + writable layer + namespaces + cgroups + process = container
+Image + writable layer + namespaces + cgroups + process = container
 ```
+
+Important truths:
+
+- containers share the host kernel
+- startup is usually faster than VMs
+- isolation is strong but different from hardware virtualization
+- deleting a container does not delete its image automatically
 
 ---
 
-# Part 2: Beginner Docker Commands
+# Beginner Layer: Core Docker Commands
 
 ```bash
 docker pull nginx:1.25
@@ -45,435 +60,350 @@ docker logs web
 docker exec -it web sh
 docker stop web
 docker rm web
-docker images
 ```
 
-Important distinction:
+Distinction:
 
-- `docker image` = package
-- `docker container` = running instance
+- image = package
+- container = running instance
 
 ---
 
-# Part 3: Images And Layers
+# Beginner Layer: Lifecycle Thinking
 
-Images are built from layers.
-
-Each Dockerfile instruction often creates a new layer.
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-CMD ["python", "app.py"]
+```text
+build -> push -> pull -> run -> observe -> stop -> remove
 ```
 
-Layer cache rule:
-
-> Put rarely changing instructions first and frequently changing application code last.
-
-Bad ordering makes CI slow.
+In production, reliability depends on every stage, not only `docker run`.
 
 ---
 
-# Part 4: Dockerfile Zero To Hero
+# Intermediate Layer: Images And Layers
 
-## Good Production Dockerfile Pattern
+Each Dockerfile instruction often creates a layer.
 
-```dockerfile
-FROM python:3.11-slim
+Good cache order:
 
-WORKDIR /app
+1. base image
+2. OS deps
+3. language deps
+4. application code
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+Why?
 
-COPY . .
+Frequent code changes should not invalidate expensive dependency layers.
 
-USER nobody
+---
 
-CMD ["python", "app.py"]
-```
+# Intermediate Layer: Better Dockerfiles
 
-## Multi-Stage Build
+Use:
 
-```dockerfile
-FROM golang:1.22 AS builder
-WORKDIR /src
-COPY . .
-RUN go build -o app ./cmd/app
+- small trusted base images
+- pinned versions
+- multi-stage builds
+- non-root users
+- explicit entrypoints
+- `.dockerignore`
 
-FROM gcr.io/distroless/base-debian12
-COPY --from=builder /src/app /app
-USER nonroot:nonroot
-ENTRYPOINT ["/app"]
-```
+Avoid:
 
-Why:
+- giant build contexts
+- secrets in image layers
+- unnecessary packages
 
-- smaller images
-- fewer CVEs
-- no compiler/runtime junk in production
+---
+
+# Intermediate Layer: Multi-Stage Builds
+
+Builder stage compiles. Runtime stage stays small.
+
+Benefits:
+
 - faster pulls
+- smaller attack surface
+- fewer CVEs
+- cleaner runtime image
 
 ---
 
-# Part 5: Container Filesystems
+# Intermediate Layer: Volumes And Persistence
 
-Most Docker installations use OverlayFS/overlay2.
+Container writable layers are ephemeral.
+
+Use volumes for:
+
+- databases in dev/test
+- caches needing persistence
+- shared data paths
+- backups/export targets
+
+Rule:
+
+> Never treat a container layer as durable production storage.
+
+---
+
+# Intermediate Layer: Networking Basics
+
+Common path:
 
 ```text
-container writable layer
-image layer 3
-image layer 2
-image layer 1
+container eth0 -> veth -> bridge -> host NAT -> network
 ```
 
-Writes go to the container writable layer.
-
-SRE implications:
-
-- logs written inside containers can fill node disk
-- deleting files inside a container does not shrink the image
-- volumes are needed for persistent data
-
----
-
-# Part 6: Volumes And Mounts
-
-Containers are ephemeral. Persistent data should live outside the writable layer.
-
-```bash
-docker volume create app-data
-docker run -v app-data:/data myapp
-```
-
-Bind mount:
-
-```bash
-docker run -v "$PWD/config:/config:ro" myapp
-```
-
-Production rule:
-
-> Do not treat container writable layers as durable storage.
-
----
-
-# Part 7: Networking Basics
-
-Default Docker networking uses a bridge.
-
-```text
-container eth0 -> veth pair -> docker0 bridge -> NAT -> host network
-```
-
-Commands:
-
-```bash
-docker network ls
-docker network inspect bridge
-docker run -p 8080:80 nginx
-docker port container
-```
-
-Port publishing maps host port to container port.
+Port publish:
 
 ```bash
 docker run -p 8080:80 nginx
 ```
 
-Means:
-
-- host listens on 8080
-- traffic forwards to container port 80
+Means host port 8080 forwards to container port 80.
 
 ---
 
-# Part 8: Process Model And PID 1
+# Intermediate Layer: Registries
 
-The container entrypoint becomes PID 1 inside the container.
+Use registries for image distribution.
 
-PID 1 has special responsibilities:
+Production habits:
 
-- handle signals
+- immutable tags
+- digest pinning
+- vulnerability scanning
+- retention cleanup
+- signed images when possible
+
+Avoid production use of mutable `latest`.
+
+---
+
+# Advanced Layer: PID 1 Problem
+
+The container entry process becomes PID 1.
+
+PID 1 must:
+
+- receive signals
+- terminate gracefully
 - reap zombie child processes
 
-Bad pattern:
+Bad signal handling causes stuck shutdowns and slow rollouts.
 
-```dockerfile
-CMD "python app.py"
-```
-
-Better:
-
-```dockerfile
-CMD ["python", "app.py"]
-```
-
-For apps that spawn children, use `tini` or proper signal handling.
+Use exec form commands and init wrappers when needed.
 
 ---
 
-# Part 9: Namespaces
-
-Namespaces isolate what a container can see.
+# Advanced Layer: Namespaces
 
 | Namespace | Isolates |
 |---|---|
-| PID | process IDs |
-| Network | interfaces, routes, ports |
-| Mount | filesystem mounts |
+| PID | processes |
+| NET | interfaces/routes/ports |
+| MNT | mounts |
 | UTS | hostname |
-| IPC | shared memory/semaphores |
-| User | UID/GID mapping |
+| IPC | shared IPC |
+| USER | UID/GID mapping |
 
-A container sees its own world, but it still shares the host kernel.
+Namespaces change what the process can see.
 
 ---
 
-# Part 10: cgroups And Resource Limits
+# Advanced Layer: cgroups
 
-cgroups limit resource usage.
+cgroups control resources.
 
 ```bash
-docker run --memory=512m --cpus=1.5 myapp
+docker run --memory=512m --cpus=1.5 app
 ```
 
-Kubernetes maps requests/limits to cgroups underneath.
+Behavior:
 
-Important:
+- memory exceeded -> kill/OOM
+- CPU exceeded -> throttling
+- no limits -> noisy neighbors possible
 
-- memory limit exceeded -> OOMKilled
-- CPU limit -> throttling, not usually kill
-- no limits -> noisy neighbor risk
+Kubernetes requests/limits rely on these primitives underneath.
 
 ---
 
-# Part 11: Runtime Architecture
+# Advanced Layer: Overlay Filesystems
 
-Modern Kubernetes usually does not use Docker directly.
+Images are stacked read-only layers plus writable container layer.
+
+Implications:
+
+- image layers reused efficiently
+- many small layers can help caching
+- logs written inside container consume node disk
+- deleting runtime files does not shrink image history
+
+---
+
+# Advanced Layer: Runtime Stack
+
+Modern Kubernetes path:
 
 ```text
 kubelet -> CRI -> containerd -> runc -> Linux kernel
 ```
 
-Tools:
-
-```bash
-crictl ps
-crictl pods
-crictl logs CONTAINER_ID
-crictl inspect CONTAINER_ID
-ctr containers list
-```
-
-On Kubernetes nodes, `crictl` is often more useful than `docker`.
+On nodes, `crictl` is often more useful than Docker CLI.
 
 ---
 
-# Part 12: Registries And Image Pulls
+# Production SRE Layer: Real Incidents
 
-Images usually come from registries.
+## ImagePullBackOff
 
-```bash
-docker login registry.example.com
-docker tag app:local registry.example.com/team/app:v1
-docker push registry.example.com/team/app:v1
-```
+Check:
 
-Production guidance:
-
-- avoid `latest`
-- prefer immutable tags or digests
-- scan images
-- sign images when possible
-
----
-
-# Part 13: Security Basics
-
-Do not run containers as root unless required.
-
-```dockerfile
-USER nonroot
-```
-
-Avoid:
-
-- secrets in images
-- privileged containers
-- hostPath mounts unless necessary
-- `--network host` casually
-- writable root filesystems where not needed
-
-Use:
-
-- read-only root filesystem
-- least privilege
-- image scanning
-- signed images
-- minimal base images
-
----
-
-# Part 14: Debugging Containers
-
-## Container Exits Immediately
-
-```bash
-docker ps -a
-docker logs CONTAINER
-docker inspect CONTAINER --format '{{.State.ExitCode}}'
-```
-
-Common exit codes:
-
-- `0` clean exit
-- `1` app error
-- `126` command not executable
-- `127` command not found
-- `137` SIGKILL / OOM
-- `143` SIGTERM
-
-## OOMKilled
-
-```bash
-docker inspect CONTAINER | grep OOMKilled
-dmesg | grep -i oom
-```
-
-In Kubernetes:
-
-```bash
-kubectl describe pod POD
-kubectl logs POD --previous
-```
-
-## No Shell In Image
-
-Distroless images may not have `sh`.
-
-Use Kubernetes ephemeral debug containers or node-level namespace entry.
-
----
-
-# Part 15: Real Incident Stories
-
-## Image Pull BackOff
-
-Likely causes:
-
-- wrong image tag
-- registry auth missing
-- private registry unavailable
+- wrong tag
+- registry auth
+- network reachability
+- rate limits
 - architecture mismatch
 
 ## CrashLoopBackOff
 
-Likely causes:
+Check:
 
-- app startup failure
-- missing env var/secret
-- bad command/entrypoint
+- startup logs
+- command/entrypoint
+- missing env or secret
 - dependency unavailable
+
+## OOMKilled
+
+Check:
+
+- memory limits too low
+- leak
+- spike load
+- heap tuning
 
 ## Node Disk Full
 
-Likely causes:
+Common causes:
 
 - container logs
-- unused images
+- old images
 - writable layers
-- failed builds/cache
+- build cache
 
-Commands:
+## Slow Shutdown During Deploy
 
-```bash
-docker system df
-docker image prune
-crictl rmi --prune
-```
+Likely:
 
-## Graceful Shutdown Fails
-
-Likely causes:
-
-- PID 1 not forwarding SIGTERM
-- app does not handle termination
-- Kubernetes grace period too short
+- PID 1 not handling SIGTERM
+- grace period too short
+- hanging child processes
 
 ---
 
-# Part 16: Containers And Kubernetes Connection
+# Production SRE Layer: Troubleshooting Flow
 
-Kubernetes adds orchestration around containers.
+## Container Won’t Start
 
-| Docker/container concept | Kubernetes concept |
+Check:
+
+- image exists
+- command valid
+- port conflict
+- missing config
+- permissions
+
+## App Running But Unreachable
+
+Check:
+
+- listening port
+- bind address
+- publish mapping
+- firewall/network policy
+
+## Resource Starvation
+
+Check:
+
+- limits
+- host contention
+- cgroup stats
+- throttling
+
+---
+
+# Kubernetes Connection
+
+| Container World | Kubernetes World |
 |---|---|
-| container | container inside pod |
-| image | image in pod spec |
-| docker run args | command/args/env/securityContext |
-| port publish | Service/Ingress |
-| volume | volume/PVC |
-| restart | restartPolicy/controller |
-| resource flags | requests/limits |
+| docker run | Pod spec |
+| -p publish | Service / Ingress |
+| volume mount | volume / PVC |
+| restart manually | controller reconciliation |
+| memory/cpu flags | requests / limits |
 
-Kubernetes still depends on Linux namespaces, cgroups, filesystems, and networking.
+Kubernetes adds orchestration, not magic. Linux primitives still matter.
 
 ---
 
-# Part 17: Interview Questions
+# Interview Layer: Strong Answers
 
-- Why are containers not VMs?
-- What are namespaces and cgroups?
-- What is the PID 1 problem?
-- Why use multi-stage builds?
-- Why avoid `latest` in production?
-- What happens when a container exceeds memory limit?
-- What is containerd?
-- How do you debug CrashLoopBackOff?
+## Why are containers not VMs?
+
+> Containers share the host kernel and isolate processes with kernel primitives instead of virtualizing full hardware.
+
+## Why use multi-stage builds?
+
+> They separate build tooling from runtime image, reducing size and attack surface.
+
+## What happens when memory limit is exceeded?
+
+> The kernel may OOM kill the containerized process.
+
+## Why can shutdowns be slow?
+
+> PID 1 may mishandle signals or child processes may not exit cleanly.
 
 ---
 
-# Part 18: Labs
+# Labs
 
 ## Beginner
 
-- run nginx locally
-- map ports
-- inspect logs
-- exec into container
+1. Run nginx.
+2. Publish a port.
+3. Inspect logs.
+4. Exec into container.
 
 ## Intermediate
 
-- write Dockerfile for Python app
-- build and push image
-- add volume
-- create custom network
+1. Build a Dockerfile.
+2. Use a volume.
+3. Push to registry.
+4. Compare image sizes.
 
 ## Advanced
 
-- multi-stage build
-- non-root image
-- simulate OOM
-- inspect cgroups
-- debug container without shell
+1. Multi-stage build.
+2. Run as non-root.
+3. Simulate OOM.
+4. Inspect namespaces.
+5. Debug with crictl on a node.
 
 ---
 
-# Part 19: Senior Answer Shape
+# Memory Review
 
-> A container is a Linux process tree started from an image, isolated by namespaces, limited by cgroups, and usually backed by an overlay filesystem. Docker is a developer interface around these primitives; Kubernetes normally talks to containerd through CRI, which ultimately uses an OCI runtime such as runc. For production debugging I separate image problems, startup problems, runtime resource limits, networking, and node-level filesystem/runtime issues.
-
----
-
-# Recall Prompts
-
-- What is the difference between image and container?
+- Why is an image not a container?
 - Why is PID 1 special?
-- What does overlay2 provide?
-- What happens when memory limit is exceeded?
-- Why does Kubernetes use containerd/crictl instead of Docker commands on many nodes?
+- Why avoid `latest`?
+- Why can logs fill node disks?
+- Why does Kubernetes still require Linux knowledge?
+
+---
+
+# Senior Summary
+
+> I treat containers as Linux processes packaged with images and controlled by kernel isolation primitives. In production I separate image issues, startup issues, runtime resource limits, networking problems, and node-level storage/runtime failures before taking action.
