@@ -1,26 +1,42 @@
-# Foundations: YAML And Kubernetes Manifest Design Zero To Hero
+# Foundations: YAML And Kubernetes Manifest Design Premium Teaching Guide
 
-YAML is the language most Kubernetes users touch every day, but production-quality manifest design is much more than indentation.
+YAML is the configuration language most Kubernetes engineers touch every day, but production-quality manifest design is much more than indentation.
 
-A manifest is an operational contract: it tells Kubernetes what to run, how to run it, how to expose it, how to secure it, how to update it, and how to recover when things go wrong.
-
-This guide is designed as a complete path:
-
-- Beginner: YAML syntax and Kubernetes object structure
-- Intermediate: Pods, Deployments, Services, ConfigMaps, Secrets, probes, resources
-- Advanced: scheduling, rollout strategy, securityContext, NetworkPolicy, PDBs, HPA, Kustomize
-- SRE Level: avoid outages caused by bad manifests
-- Interview Level: explain safe production manifest design clearly
+A manifest is an operational contract. It tells Kubernetes what to run, how to run it, how to expose it, how to secure it, how to update it, and how to recover when things go wrong.
 
 ---
 
-# Part 1: What YAML Is
+# How To Use This Module
 
-YAML is a human-readable data format used for configuration.
+Study in layers:
 
-Kubernetes manifests are YAML documents submitted to the API server.
+1. **Beginner Layer** — YAML syntax and Kubernetes object structure.
+2. **Intermediate Layer** — Deployments, Services, ConfigMaps, Secrets, probes, resources.
+3. **Advanced Layer** — scheduling, securityContext, NetworkPolicy, PDBs, HPA, Kustomize.
+4. **Production SRE Layer** — outage prevention and manifest review.
+5. **Interview Layer** — explain safe manifest design clearly.
 
-Basic YAML building blocks:
+---
+
+# Memory Palace: Restaurant Order System
+
+| Concept | Analogy | Meaning |
+|---|---|---|
+| YAML | Order form | Structured config |
+| apiVersion/kind | Cuisine + dish type | Kubernetes object identity |
+| metadata | Order label | Name, namespace, labels |
+| spec | Customer request | Desired state |
+| status | Kitchen update | Observed state |
+| labels | Table tags | Object grouping |
+| selector | Waiter filter | Which objects to target |
+| probes | Food quality checks | Health behavior |
+| resources | Kitchen allocation | CPU/memory reservation |
+
+---
+
+# Beginner Layer: YAML Basics
+
+YAML uses indentation to express structure.
 
 ```yaml
 name: checkout
@@ -34,54 +50,21 @@ labels:
   team: payments
 ```
 
-YAML uses indentation to express structure. Spaces matter.
+Spaces matter. Tabs are dangerous.
 
----
-
-# Part 2: YAML Gotchas
-
-## Quote Risky Values
+Quote risky values:
 
 ```yaml
 version: "1.10"
-port: "080"
 value: "true"
-```
-
-Without quotes, parsers may interpret values as numbers or booleans.
-
-## Lists
-
-```yaml
-containers:
-  - name: app
-    image: nginx
-```
-
-## Multi-Line Strings
-
-```yaml
-script: |
-  echo starting
-  echo done
-```
-
-## Multiple Documents
-
-```yaml
----
-apiVersion: v1
-kind: Service
----
-apiVersion: apps/v1
-kind: Deployment
+port: "080"
 ```
 
 ---
 
-# Part 3: Kubernetes Object Anatomy
+# Beginner Layer: Kubernetes Object Anatomy
 
-Most Kubernetes objects follow this shape:
+Most objects look like this:
 
 ```yaml
 apiVersion: apps/v1
@@ -89,8 +72,6 @@ kind: Deployment
 metadata:
   name: api
   namespace: production
-  labels:
-    app: api
 spec:
   replicas: 3
 ```
@@ -101,412 +82,254 @@ spec:
 | kind | object type |
 | metadata | name, namespace, labels, annotations |
 | spec | desired state |
-| status | observed state, written by controllers |
+| status | observed state |
 
-You normally write `spec`; Kubernetes writes `status`.
+You write `spec`. Controllers write `status`.
 
 ---
 
-# Part 4: Labels, Selectors, And Annotations
+# Beginner Layer: Labels And Selectors
 
 Labels connect objects.
 
-Service selector matches Pod labels.
-Deployment selector matches Pod template labels.
+A Service finds Pods through selectors.
 
 ```yaml
 selector:
-  matchLabels:
-    app: checkout
+  app: checkout
 ```
 
-Common production mistake:
+Common outage:
 
-> Service selector does not match Pod labels, so Service has no endpoints.
-
-Annotations store metadata for tools/controllers.
-
-Examples:
-
-- ingress controller options
-- Prometheus scrape hints
-- rollout metadata
+> Service exists but has no endpoints because selector does not match Pod labels.
 
 ---
 
-# Part 5: Pod Manifest
+# Intermediate Layer: Production Deployment Shape
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: api
-  labels:
-    app: api
-spec:
-  containers:
-    - name: api
-      image: nginx:1.25
-      ports:
-        - containerPort: 80
-```
+A production Deployment should usually define:
 
-Pods are useful for learning, but production workloads usually use Deployments, StatefulSets, Jobs, or DaemonSets.
+- stable labels
+- immutable image tag or digest
+- readiness probe
+- resource requests
+- safe rollout strategy
+- security context
+
+Key rule:
+
+> A Deployment should describe behavior during rollout and failure, not only what image to run.
 
 ---
 
-# Part 6: Deployment Manifest
+# Intermediate Layer: Service Design
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: checkout-api
-  namespace: production
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: checkout-api
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        app: checkout-api
-    spec:
-      containers:
-        - name: checkout-api
-          image: registry.example.com/checkout-api:v1.2.3
-          ports:
-            - name: http
-              containerPort: 8080
-```
-
-Important:
-
-- selector must match template labels
-- image should be immutable/tagged safely
-- rollout strategy affects availability
-
----
-
-# Part 7: Service Manifest
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: checkout-api
-spec:
-  type: ClusterIP
-  selector:
-    app: checkout-api
-  ports:
-    - name: http
-      port: 80
-      targetPort: 8080
+ports:
+  - name: http
+    port: 80
+    targetPort: 8080
 ```
 
 `port` is what callers use.
+
 `targetPort` is where the container listens.
 
-If `targetPort` is wrong, Service exists but traffic fails.
+Wrong `targetPort` creates confusing traffic failures.
 
 ---
 
-# Part 8: ConfigMaps And Secrets
+# Intermediate Layer: ConfigMaps And Secrets
 
-## ConfigMap
+ConfigMap = non-sensitive config.
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: checkout-config
-data:
-  LOG_LEVEL: "info"
-  DB_HOST: "postgres.production.svc.cluster.local"
-```
-
-## Secret
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: checkout-secret
-type: Opaque
-stringData:
-  DB_PASSWORD: "example"
-```
-
-Secrets are base64-encoded in Kubernetes, not automatically safe by default.
+Secret = sensitive value container, but not automatically safe unless RBAC and encryption are configured.
 
 Production guidance:
 
-- enable encryption at rest
+- separate config from code
+- do not log secrets
 - restrict RBAC
-- avoid logging secrets
 - prefer external secret managers where appropriate
 
 ---
 
-# Part 9: Environment Variables And Volumes
+# Intermediate Layer: Probes
 
-```yaml
-env:
-  - name: LOG_LEVEL
-    valueFrom:
-      configMapKeyRef:
-        name: checkout-config
-        key: LOG_LEVEL
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: checkout-secret
-        key: DB_PASSWORD
-```
-
-Config can also be mounted as files.
-
-```yaml
-volumes:
-  - name: config
-    configMap:
-      name: checkout-config
-volumeMounts:
-  - name: config
-    mountPath: /etc/app
-    readOnly: true
-```
-
----
-
-# Part 10: Probes
-
-| Probe | Purpose |
+| Probe | Question |
 |---|---|
-| startupProbe | app has finished starting |
-| readinessProbe | app can receive traffic |
-| livenessProbe | app is stuck and should restart |
-
-Readiness is for traffic.
-Liveness is for restart.
-Startup protects slow-starting apps.
+| startupProbe | Has app finished booting? |
+| readinessProbe | Can app receive traffic? |
+| livenessProbe | Should app restart? |
 
 Bad pattern:
 
-> Liveness probe checks database connectivity, causing restart storms when DB is down.
+> Liveness probe checks database health and causes restart storms during DB outage.
+
+Use readiness for dependency readiness. Use liveness for stuck process detection.
 
 ---
 
-# Part 11: Resource Requests And Limits
-
-```yaml
-resources:
-  requests:
-    cpu: "250m"
-    memory: "256Mi"
-  limits:
-    cpu: "1"
-    memory: "512Mi"
-```
+# Intermediate Layer: Requests And Limits
 
 Requests affect scheduling.
+
 Limits affect runtime enforcement.
+
+Important behavior:
+
+- CPU limit can throttle
+- memory limit can OOMKill
+- missing requests cause bad scheduling
+- HPA needs requests for utilization math
+
+---
+
+# Advanced Layer: Security Context
+
+Production workloads should minimize privilege.
+
+Good defaults:
+
+- run as non-root
+- no privilege escalation
+- drop Linux capabilities
+- read-only root filesystem where practical
+- seccomp RuntimeDefault
+
+Security context is part of reliability because compromised workloads become incidents.
+
+---
+
+# Advanced Layer: Scheduling Controls
+
+Use placement intentionally:
+
+- nodeSelector for simple placement
+- taints/tolerations for dedicated nodes
+- affinity for co-location
+- anti-affinity for spreading
+- topology spread for zone resilience
+
+Bad placement can turn one-node failure into full service outage.
+
+---
+
+# Advanced Layer: PodDisruptionBudget
+
+PDB protects replicated workloads during voluntary disruption such as node drains.
+
+Without PDBs, maintenance can evict too many replicas at once.
+
+Use with enough replicas. A PDB cannot protect a single replica from downtime.
+
+---
+
+# Advanced Layer: HPA
+
+HorizontalPodAutoscaler needs:
+
+- metrics
+- resource requests
+- reasonable min/max replicas
+- workload that can scale horizontally
+
+Autoscaling bad metrics creates bad automation.
+
+---
+
+# Advanced Layer: NetworkPolicy
+
+NetworkPolicy controls Pod traffic.
 
 Important:
 
-- CPU limit causes throttling
-- memory limit causes OOMKill
-- missing requests cause poor scheduling
-- requests too low create noisy-neighbor behavior
+- default allow unless policies select Pods
+- egress deny often breaks DNS unless allowed
+- policy requires CNI support
+
+Use policy to encode trust boundaries.
 
 ---
 
-# Part 12: Security Context
+# Advanced Layer: Kustomize
 
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  seccompProfile:
-    type: RuntimeDefault
-containers:
-  - name: app
-    securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: ["ALL"]
-```
-
-Production goal:
-
-- non-root
-- minimal Linux capabilities
-- no privilege escalation
-- read-only root filesystem where practical
-
----
-
-# Part 13: Scheduling Controls
-
-## nodeSelector
-
-```yaml
-nodeSelector:
-  nodepool: general
-```
-
-## Taints And Tolerations
-
-```yaml
-tolerations:
-  - key: "dedicated"
-    operator: "Equal"
-    value: "gpu"
-    effect: "NoSchedule"
-```
-
-## Affinity
-
-```yaml
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchLabels:
-              app: checkout-api
-          topologyKey: kubernetes.io/hostname
-```
-
-Use these to control placement and resilience.
-
----
-
-# Part 14: Topology Spread
-
-```yaml
-topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: topology.kubernetes.io/zone
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        app: checkout-api
-```
-
-This spreads replicas across zones or nodes.
-
-Useful for fault tolerance.
-
----
-
-# Part 15: PodDisruptionBudget
-
-```yaml
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: checkout-api-pdb
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      app: checkout-api
-```
-
-PDB protects workloads during voluntary disruptions like node drains.
-
----
-
-# Part 16: HorizontalPodAutoscaler
-
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: checkout-api
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: checkout-api
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 60
-```
-
-HPA depends on resource requests and metrics.
-
-No CPU request often means CPU utilization-based HPA cannot work correctly.
-
----
-
-# Part 17: NetworkPolicy
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend-to-api
-spec:
-  podSelector:
-    matchLabels:
-      app: api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: frontend
-      ports:
-        - port: 8080
-```
-
-Remember to allow DNS when using egress deny policies.
-
----
-
-# Part 18: Kustomize And Overlays
-
-Use Kustomize to avoid copy-pasting manifests across environments.
+Use Kustomize for environment overlays.
 
 ```text
 base/
-  deployment.yaml
-  service.yaml
-  kustomization.yaml
-overlays/
-  dev/
-  prod/
+overlays/dev/
+overlays/prod/
 ```
 
-```bash
-kubectl apply -k overlays/prod
-```
-
-Base holds common config. Overlay applies environment-specific changes.
+Avoid copy-pasting entire manifests per environment. Copy-paste creates silent drift.
 
 ---
 
-# Part 19: Validation And Review
+# Production SRE Layer: Manifest Review Checklist
 
-Useful tools:
+Before approving, check:
+
+- selector matches labels
+- image tag/digest is safe
+- readiness probe exists
+- liveness is not dangerous
+- requests/limits make sense
+- rollout strategy preserves availability
+- securityContext is hardened
+- PDB exists for critical replicated services
+- configs and secrets are separated
+- NetworkPolicy matches trust model
+
+---
+
+# Production SRE Layer: Real Incidents
+
+## Service Has No Endpoints
+
+Likely:
+
+- selector mismatch
+- Pods not ready
+
+Check:
+
+```bash
+kubectl describe svc api
+kubectl get pods --show-labels
+kubectl get endpointslice
+```
+
+## Rollout Hangs
+
+Likely:
+
+- readiness failing
+- image pull error
+- insufficient capacity
+- bad maxUnavailable/maxSurge
+
+## Restart Storm
+
+Likely:
+
+- liveness too aggressive
+- dependency check in liveness
+- slow startup without startupProbe
+
+## Node Drain Caused Outage
+
+Likely:
+
+- no PDB
+- too few replicas
+- replicas concentrated on one node/AZ
+
+---
+
+# Production SRE Layer: Validation Tools
+
+Use:
 
 ```bash
 kubectl apply --dry-run=server -f file.yaml
@@ -517,106 +340,64 @@ kube-score score manifest.yaml
 conftest test manifest.yaml
 ```
 
-Review checklist:
-
-- selectors match labels
-- image tag is safe
-- probes are correct
-- requests/limits exist
-- securityContext is hardened
-- rollout strategy is safe
-- PDB exists for replicated services
-- config/secrets are separated
+Validation catches syntax. Review catches operational risk.
 
 ---
 
-# Part 20: Real Incident Stories
+# Interview Layer: Strong Answers
 
-## Service Has No Endpoints
+## Why are manifests operational contracts?
 
-Cause:
+> They define not only what to run, but how the workload behaves during scheduling, rollout, failure, security enforcement, and recovery.
 
-- selector mismatch
+## Readiness vs liveness?
 
-Fix:
+> Readiness controls traffic eligibility. Liveness controls restart behavior.
 
-- compare Service selector with Pod labels
+## Why avoid `latest`?
 
-```bash
-kubectl describe svc api
-kubectl get pods --show-labels
-kubectl get endpointslice
-```
+> It is mutable and breaks reproducibility and rollback certainty.
 
-## Deployment Rollout Hangs
+## What should every production Deployment include?
 
-Causes:
-
-- readiness probe failing
-- maxUnavailable too strict with insufficient capacity
-- image pull failure
-
-## App Restart Storm
-
-Cause:
-
-- liveness probe checks external dependency
-
-Fix:
-
-- move dependency check to readiness
-
-## Pods Evicted During Node Maintenance
-
-Cause:
-
-- missing PDB
-
-Fix:
-
-- add PDB and enough replicas
+> Stable selectors, safe image reference, probes, resource requests, rollout strategy, security context, and appropriate disruption controls.
 
 ---
 
-# Part 21: Anti-Patterns
+# Labs
 
-Avoid:
+## Beginner
 
-- `image: latest`
-- no resource requests
-- liveness checking database
-- root containers by default
-- no readiness probe
-- Service selector too broad
-- secrets committed in plain text
-- huge manifests copied between environments
-- no PDB for critical replicated services
+1. Write Pod, Service, Deployment manifests.
+2. Break YAML indentation and fix it.
+3. Inspect object status.
 
----
+## Intermediate
 
-# Part 22: Interview Questions
+1. Break Service selector and debug endpoints.
+2. Add ConfigMap and Secret.
+3. Add readiness/startup/liveness probes.
 
-- What fields are required in a Kubernetes object?
-- Why do labels and selectors matter?
-- Requests vs limits?
-- Readiness vs liveness?
-- Why is `latest` dangerous?
-- How does a bad manifest cause outage?
-- What should every production Deployment include?
-- How would you review a Kubernetes manifest PR?
+## Advanced
+
+1. Add securityContext hardening.
+2. Add PDB.
+3. Add HPA.
+4. Add NetworkPolicy with DNS allowance.
+5. Create Kustomize dev/prod overlays.
 
 ---
 
-# Part 23: Senior Answer Shape
+# Memory Review
 
-> I review Kubernetes manifests as operational contracts. I check whether selectors match labels, rollout settings preserve availability, probes distinguish traffic readiness from process death, resources support scheduling and prevent noisy-neighbor behavior, security contexts reduce runtime privilege, and disruption budgets protect maintenance events. A manifest is production-ready only when it defines not just what to run, but how the workload behaves during failure, rollout, and recovery.
-
----
-
-# Recall Prompts
-
-- Why can a Service exist but have no endpoints?
+- Why can a Service exist with no endpoints?
 - Why does HPA need requests?
-- Why should liveness not depend on database health?
-- What does PDB protect against?
-- Why are manifests operational contracts?
+- Why should liveness not check DB health?
+- What does a PDB protect against?
+- Why is copy-pasted YAML risky?
+
+---
+
+# Senior Summary
+
+> I review Kubernetes manifests as operational contracts. I check selector correctness, rollout safety, probes, resources, security posture, disruption tolerance, and environment drift. A manifest is production-ready only when it describes how the workload behaves during failure, rollout, and recovery.
