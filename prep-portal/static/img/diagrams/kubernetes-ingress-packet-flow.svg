@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title desc">
+  <title id="title">Kubernetes ingress packet flow</title>
+  <desc id="desc">External user traffic flows through DNS, cloud load balancer, ingress controller, service, EndpointSlice, and Pod.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/></linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#38bdf8"/><stop offset="1" stop-color="#2563eb"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#020617" flood-opacity="0.35"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#93c5fd"/></marker>
+    <style>
+      .label{font:700 20px Inter,Arial,sans-serif;fill:#f8fafc}.sub{font:500 13px Inter,Arial,sans-serif;fill:#dbeafe}.step{font:700 12px Inter,Arial,sans-serif;fill:#bfdbfe;letter-spacing:.08em}.box{fill:url(#node);rx:22;filter:url(#shadow)}.line{stroke:#93c5fd;stroke-width:4;fill:none;marker-end:url(#arrow)}.hint{font:600 15px Inter,Arial,sans-serif;fill:#fde68a}
+    </style>
+  </defs>
+  <rect width="1180" height="360" rx="28" fill="url(#bg)"/>
+  <text x="40" y="52" class="label">External request → Pod packet path</text>
+  <text x="40" y="80" class="sub">Use this path when debugging ingress 502s, no endpoints, wrong ports, and readiness issues.</text>
+  <g transform="translate(35 130)">
+    <g><rect class="box" width="150" height="82"/><text x="75" y="35" text-anchor="middle" class="label">User</text><text x="75" y="58" text-anchor="middle" class="sub">browser/client</text><text x="16" y="104" class="step">1 SOURCE</text></g>
+    <path class="line" d="M158 41 H218"/>
+    <g transform="translate(230 0)"><rect class="box" width="150" height="82"/><text x="75" y="35" text-anchor="middle" class="label">DNS</text><text x="75" y="58" text-anchor="middle" class="sub">name → LB</text><text x="16" y="104" class="step">2 RESOLVE</text></g>
+    <path class="line" d="M388 41 H448"/>
+    <g transform="translate(460 0)"><rect class="box" width="150" height="82"/><text x="75" y="31" text-anchor="middle" class="label">Cloud LB</text><text x="75" y="56" text-anchor="middle" class="sub">target health</text><text x="16" y="104" class="step">3 ENTER</text></g>
+    <path class="line" d="M618 41 H678"/>
+    <g transform="translate(690 0)"><rect class="box" width="150" height="82"/><text x="75" y="31" text-anchor="middle" class="label">Ingress</text><text x="75" y="56" text-anchor="middle" class="sub">host/path rule</text><text x="16" y="104" class="step">4 ROUTE</text></g>
+    <path class="line" d="M848 41 H908"/>
+    <g transform="translate(920 0)"><rect class="box" width="150" height="82"/><text x="75" y="31" text-anchor="middle" class="label">Service</text><text x="75" y="56" text-anchor="middle" class="sub">port → targetPort</text><text x="16" y="104" class="step">5 SELECT</text></g>
+  </g>
+  <path class="line" d="M1030 232 C1030 280 780 285 735 244"/>
+  <g transform="translate(520 244)"><rect class="box" width="180" height="76"/><text x="90" y="31" text-anchor="middle" class="label">EndpointSlice</text><text x="90" y="54" text-anchor="middle" class="sub">ready backends</text></g>
+  <path class="line" d="M708 282 H800"/>
+  <g transform="translate(815 244)"><rect class="box" width="145" height="76"/><text x="72" y="31" text-anchor="middle" class="label">Pod</text><text x="72" y="54" text-anchor="middle" class="sub">app listener</text></g>
+  <text x="40" y="326" class="hint">Debug rule: if PodIP works but Service fails, inspect Service → EndpointSlice → kube-proxy/eBPF → NetworkPolicy.</text>
+</svg>
