@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="330" viewBox="0 0 1180 330" role="img" aria-labelledby="title desc">
+  <title id="title">Kubernetes Pod to Service to Pod flow</title>
+  <desc id="desc">Internal cluster traffic from one Pod to a Service ClusterIP and then to a backend Pod.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/></linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#34d399"/><stop offset="1" stop-color="#0f766e"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#020617" flood-opacity="0.35"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#99f6e4"/></marker>
+    <style>.label{font:700 20px Inter,Arial,sans-serif;fill:#f8fafc}.sub{font:500 13px Inter,Arial,sans-serif;fill:#ccfbf1}.step{font:700 12px Inter,Arial,sans-serif;fill:#99f6e4;letter-spacing:.08em}.box{fill:url(#node);rx:22;filter:url(#shadow)}.line{stroke:#99f6e4;stroke-width:4;fill:none;marker-end:url(#arrow)}.hint{font:600 15px Inter,Arial,sans-serif;fill:#fde68a}</style>
+  </defs>
+  <rect width="1180" height="330" rx="28" fill="url(#bg)"/>
+  <text x="40" y="52" class="label">Pod → Service → Pod internal traffic flow</text>
+  <text x="40" y="80" class="sub">Use this when Service DNS resolves but application traffic still fails.</text>
+  <g transform="translate(60 135)">
+    <g><rect class="box" width="155" height="82"/><text x="77" y="34" text-anchor="middle" class="label">Pod A</text><text x="77" y="58" text-anchor="middle" class="sub">client</text><text x="20" y="104" class="step">1 CALL</text></g>
+    <path class="line" d="M165 41 H255"/>
+    <g transform="translate(270 0)"><rect class="box" width="180" height="82"/><text x="90" y="31" text-anchor="middle" class="label">Service</text><text x="90" y="56" text-anchor="middle" class="sub">ClusterIP virtual IP</text><text x="20" y="104" class="step">2 VIRTUAL</text></g>
+    <path class="line" d="M460 41 H550"/>
+    <g transform="translate(565 0)"><rect class="box" width="200" height="82"/><text x="100" y="31" text-anchor="middle" class="label">kube-proxy/eBPF</text><text x="100" y="56" text-anchor="middle" class="sub">translate to backend</text><text x="20" y="104" class="step">3 DATAPATH</text></g>
+    <path class="line" d="M775 41 H865"/>
+    <g transform="translate(880 0)"><rect class="box" width="180" height="82"/><text x="90" y="31" text-anchor="middle" class="label">Pod B</text><text x="90" y="56" text-anchor="middle" class="sub">ready endpoint</text><text x="20" y="104" class="step">4 BACKEND</text></g>
+  </g>
+  <text x="40" y="295" class="hint">Debug rule: compare curl to Service name, ClusterIP, and PodIP to isolate DNS, Service datapath, or backend failures.</text>
+</svg>
